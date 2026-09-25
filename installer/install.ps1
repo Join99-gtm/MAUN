@@ -311,7 +311,7 @@ try {
     # 7. done
     $summary = "Готово! Гусь лежит здесь:`n" + $gooseDir + "`n`nМод установлен, моды в config.ini включены"
     if ($shortcutOk) { $summary += ", ярлык «" + $GooseFolderName + "» на рабочем столе создан" }
-    $summary += ".`n`nПри запуске гусь спросит про моды — нажми «Да» (Yes).
+    $summary += ".`n`nПри запуске гусь спросит про моды — нажми «Да» (Yes)."
     if (-not $NoLaunch -and (Ask ($summary + "`n`nЗапустить гуся сейчас?"))) {
         Start-Process -FilePath (Join-Path $gooseDir 'GooseDesktop.exe') -WorkingDirectory $gooseDir
     } else {
