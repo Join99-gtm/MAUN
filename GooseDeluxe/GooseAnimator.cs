@@ -26,6 +26,8 @@ namespace GooseDeluxe
         public bool mouseHeld;
         public float speed01;    // 0 .. 1 of charge speed
         public float headShake;  // px, sideways head jitter (idle "shake" animation)
+        public CarryKind carry;  // note/photo in the beak (set by the caller)
+        public bool asleep;
     }
 
     /// <summary>
@@ -62,17 +64,34 @@ namespace GooseDeluxe
 #if HEADLESS
         public static bool HeadlessMouseHeld;
 #endif
-        private static readonly string[] honkWords = { "HONK!", "HJONK!", "honk", "HONK HONK", "hjonk" };
+        private readonly string[] honkWords;
+        private float nextZTime;
+        private float sleepBlend;
+
+        /// <summary>Visitors honk when they arrive, not when they are created.</summary>
+        public bool SilentStart;
+        /// <summary>Drawn asleep: eyes shut, head down, floating "z".</summary>
+        public bool Asleep;
+
+        public bool HasPose { get { return !first; } }
+        public GoosePose Pose { get { return pose; } }
 
         public GooseAnimator(DeluxeConfig cfg, ParticleSystem particles)
         {
             this.cfg = cfg;
             this.particles = particles;
+            honkWords = RussianPack.HonkWords(cfg.Language);
+        }
+
+        public void Honk(GooseEntity g, float now)
+        {
+            TriggerHonk(g, now, cfg.Scale);
         }
 
         public GoosePose Update(GooseEntity g, float dt, float now)
         {
-            float speed = Vector2.Magnitude(g.velocity);
+            float speed = Asleep ? 0f : Vector2.Magnitude(g.velocity);
+            sleepBlend = M.Lerp(sleepBlend, Asleep ? 1f : 0f, Math.Min(1f, dt * 3f));
             float walk = g.parameters.WalkSpeed, run = g.parameters.RunSpeed, charge = g.parameters.ChargeSpeed;
             float scale = cfg.Scale;
 
@@ -93,7 +112,7 @@ namespace GooseDeluxe
                 }
                 catch { taskIds = null; }
                 lastTask = g.currentTask;
-                TriggerHonk(g, now, scale); // the goose honks on startup
+                if (!SilentStart) TriggerHonk(g, now, scale); // the goose honks on startup
             }
 
             DetectTaskChange(g, now, scale);
@@ -137,7 +156,7 @@ namespace GooseDeluxe
             float puff = cfg.HonkAnimation ? honkE * 0.18f : 0f;
 
             // --- idle animations ---
-            bool isIdle = speed < 8f && !honking && (wanderTaskIndex < 0 || g.currentTask == wanderTaskIndex);
+            bool isIdle = !Asleep && speed < 8f && !honking && (wanderTaskIndex < 0 || g.currentTask == wanderTaskIndex);
             float stretchExtra = 0f;
             float headShake = 0f;
             float preenYaw = 0f;
@@ -193,13 +212,14 @@ namespace GooseDeluxe
             float mouseDist = Vector2.Magnitude(toMouse);
             float targetYaw = 0f;
             if (idle == IdleAction.Preen) targetYaw = preenYaw;
+            else if (Asleep) targetYaw = 0f;
             else if (cfg.LookAtCursor && isIdle && mouseDist > 25f && mouseDist < 520f)
                 targetYaw = M.Clamp(M.WrapDeg(M.AngleDeg(toMouse) - renderDir), -60f, 60f);
             float yawRate = idle == IdleAction.Preen ? 10f : 6f;
             headYaw = M.Lerp(headYaw, targetYaw, Math.Min(1f, dt * yawRate));
             Vector2 fwdHead = Vector2.GetFromAngleDegrees(renderDir + headYaw);
             Vector2 perpHead = Vector2.GetFromAngleDegrees(renderDir + headYaw + 90f);
-            Vector2 eyeLook = (cfg.LookAtCursor && mouseDist < 700f && mouseDist > 5f) ? Vector2.Normalize(toMouse) * 1.1f : Vector2.zero;
+            Vector2 eyeLook = (!Asleep && cfg.LookAtCursor && mouseDist < 700f && mouseDist > 5f) ? Vector2.Normalize(toMouse) * 1.1f : Vector2.zero;
 
             // --- blink ---
             float blink = 0f;
@@ -214,6 +234,16 @@ namespace GooseDeluxe
                 {
                     float bp = 1f - (blinkEndTime - now) / 0.14f;
                     blink = (float)Math.Sin(bp * Math.PI);
+                }
+            }
+
+            if (Asleep)
+            {
+                blink = 1f;
+                if (cfg.Particles && now > nextZTime)
+                {
+                    nextZTime = now + 1.1f;
+                    particles.SpawnSleepZ(g.position + M.Up * 40f * scale + Vector2.GetFromAngleDegrees(renderDir) * 18f * scale, scale, now);
                 }
             }
 
@@ -234,7 +264,7 @@ namespace GooseDeluxe
 
             // --- build the rig (same formulas as the goose, plus our offsets) ---
             float neckLerp = g.rig.neckLerpPercent;
-            float neckH = M.Lerp(20f, 10f, neckLerp) + stretchExtra;
+            float neckH = M.Lerp(20f, 10f, neckLerp) + stretchExtra - 9f * sleepBlend; // sleeping: head tucked down
             float neckF = M.Lerp(3f, 16f, neckLerp);
             Vector2 fwdNeck = Vector2.Normalize(Vector2.Lerp(fwd, fwdHead, 0.5f));
 
@@ -268,6 +298,8 @@ namespace GooseDeluxe
             pose.eyeLook = eyeLook;
             pose.speed01 = M.Clamp01(speed / charge);
             pose.headShake = headShake;
+            pose.asleep = Asleep;
+            pose.carry = CarryKind.None;
 #if HEADLESS
             pose.mouseHeld = HeadlessMouseHeld;
 #else

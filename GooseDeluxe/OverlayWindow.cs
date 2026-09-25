@@ -44,6 +44,21 @@ namespace GooseDeluxe
             }
         }
 
+        /// <summary>Raised for WM_HOTKEY with the hotkey's id (the mod registers its hotkeys on this window).</summary>
+        public event Action<int> HotkeyPressed;
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_HOTKEY = 0x0312;
+            if (m.Msg == WM_HOTKEY)
+            {
+                Action<int> h = HotkeyPressed;
+                if (h != null) h(m.WParam.ToInt32());
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
         // WinForms would otherwise try to paint the (ignored) window surface every frame.
         protected override void OnPaintBackground(PaintEventArgs e) { }
         protected override void OnPaint(PaintEventArgs e) { }

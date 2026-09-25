@@ -6,7 +6,7 @@ using SamEngine;
 
 namespace GooseDeluxe
 {
-    internal enum ParticleKind { Dust, Feather, Text }
+    internal enum ParticleKind { Dust, Feather, Text, SleepZ }
 
     internal struct Particle
     {
@@ -78,6 +78,22 @@ namespace GooseDeluxe
             list.Add(p);
         }
 
+        public void SpawnSleepZ(Vector2 at, float scale, float now)
+        {
+            if (list.Count >= Max) return;
+            Particle p = new Particle();
+            p.kind = ParticleKind.SleepZ;
+            p.pos = at;
+            p.vel = new Vector2(M.Rand(10f, 18f), -22f);
+            p.life = 2.2f;
+            p.size = scale;
+            p.text = "z";
+            p.color = Color.FromArgb(255, 235, 240, 255);
+            p.seed = M.Rand(0f, 6.28f);
+            p.born = now;
+            list.Add(p);
+        }
+
         public void Update(float dt, float now)
         {
             for (int i = list.Count - 1; i >= 0; i--)
@@ -98,6 +114,9 @@ namespace GooseDeluxe
                         break;
                     case ParticleKind.Text:
                         p.vel = p.vel * (1f - 1.5f * dt);
+                        break;
+                    case ParticleKind.SleepZ:
+                        p.vel.x = 14f + (float)Math.Sin(p.seed + age * 3f) * 10f;
                         break;
                 }
                 p.pos += p.vel * dt;
@@ -137,6 +156,19 @@ namespace GooseDeluxe
                                 g.DrawEllipse(edge, -p.size * 0.5f, -p.size * 1.3f, p.size, p.size * 2.6f);
                                 g.DrawLine(pen, 0f, -p.size * 1.1f, 0f, p.size * 1.1f);
                                 g.ResetTransform();
+                            }
+                            break;
+                        }
+                    case ParticleKind.SleepZ:
+                        {
+                            float alpha = t < 0.15f ? t / 0.15f : (t > 0.6f ? (1f - t) / 0.4f : 1f);
+                            float px = (9f + 9f * t) * p.size;
+                            using (Font f = new Font("Arial", Math.Max(4f, px), FontStyle.Bold, GraphicsUnit.Pixel))
+                            using (SolidBrush shadow = new SolidBrush(M.WithAlpha(Color.Black, alpha * 0.4f)))
+                            using (SolidBrush b = new SolidBrush(M.WithAlpha(p.color, alpha)))
+                            {
+                                g.DrawString(p.text, f, shadow, p.pos.x + 1f, p.pos.y + 1f);
+                                g.DrawString(p.text, f, b, p.pos.x, p.pos.y);
                             }
                             break;
                         }

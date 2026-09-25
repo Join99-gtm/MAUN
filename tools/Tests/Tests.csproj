@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Headless preview: renders the mod's goose to PNGs on Linux/macOS so the drawing can be checked without Windows. -->
+  <!-- Headless tests: compiles the mod's WinForms-free sources for .NET 8 with HEADLESS and exercises them. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -10,7 +10,7 @@
     <NoWarn>CS1701;CS1702;NU1701;SYSLIB0014;CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Program.cs" />
+    <Compile Include="*.cs" />
     <Compile Include="../../GooseDeluxe/M.cs" />
     <Compile Include="../../GooseDeluxe/Deluxe.cs" />
     <Compile Include="../../GooseDeluxe/DeluxeConfig.cs" />
@@ -20,6 +20,8 @@
     <Compile Include="../../GooseDeluxe/GooseRenderer.cs" />
     <Compile Include="../../GooseDeluxe/Guests.cs" />
     <Compile Include="../../GooseDeluxe/Fixes/FixedTimestep.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/DeckFixer.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/GooseSettings.cs" />
     <Compile Include="../../GooseDeluxe/Net/*.cs" />
     <Compile Include="../../GooseDeluxe/Tasks/*.cs" />
   </ItemGroup>

@@ -18,11 +18,24 @@ namespace GooseDeluxe
 
         public GooseRenderer(DeluxeConfig cfg) { this.cfg = cfg; }
 
-        public void Draw(Graphics g, GoosePose p, GooseEntity ge, ParticleSystem particles, float now)
+        private static readonly Font labelFont = new Font("Arial", 11f, FontStyle.Bold, GraphicsUnit.Pixel);
+
+        public void Prepare(Graphics g)
         {
             g.SmoothingMode = cfg.AntiAlias ? SmoothingMode.AntiAlias : SmoothingMode.None;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.CompositingQuality = CompositingQuality.HighQuality;
+        }
+
+        /// <summary>Only the footprints of a goose (a visitor that already left).</summary>
+        public void DrawFootprintsOnly(Graphics g, GooseEntity ge, float scale, float now)
+        {
+            DrawFootmarks(g, ge, now, scale);
+        }
+
+        /// <summary>Draws one goose. Particles are drawn separately, once, above all geese.</summary>
+        public void Draw(Graphics g, GoosePose p, GooseEntity ge, float now, HatStyle hat, string label)
+        {
 
             Color white = ge.renderData.brushGooseWhite.Color;
             Color orange = ge.renderData.brushGooseOrange.Color;
@@ -60,11 +73,80 @@ namespace GooseDeluxe
             if (wings) DrawWing(g, p, nearSide, wingFill, false);
 
             DrawBeak(g, p, orange);
+            if (p.carry != CarryKind.None) DrawCarry(g, p);
             DrawEyes(g, p);
-            DrawHat(g, p);
+            DrawHat(g, p, hat);
             if (p.mouseHeld) DrawStruggle(g, p, now);
+            if (!string.IsNullOrEmpty(label)) DrawLabel(g, p, label);
+        }
 
-            particles.Draw(g, now);
+        /// <summary>A folded note or a small photo held in the beak.</summary>
+        private static void DrawCarry(Graphics g, GoosePose p)
+        {
+            float s = p.scale;
+            Vector2 at = p.head2EndPoint + p.fwdHead * 6f * s + M.Up * -2f * s;
+            float angle = M.AngleDeg(p.fwdHead);
+            // keep it upright-ish whichever way the goose faces
+            if (angle > 90f) angle -= 180f; else if (angle < -90f) angle += 180f;
+            float w = 13f * s, h = 10f * s;
+            GraphicsState state = g.Save();
+            g.TranslateTransform(at.x, at.y);
+            g.RotateTransform(angle * 0.35f + 8f);
+            using (SolidBrush shadow = new SolidBrush(Color.FromArgb(60, 0, 0, 0)))
+                g.FillRectangle(shadow, -w / 2f + 1.2f * s, -h / 2f + 1.5f * s, w, h);
+            if (p.carry == CarryKind.Photo)
+            {
+                using (SolidBrush frame = new SolidBrush(Color.FromArgb(250, 250, 250)))
+                    g.FillRectangle(frame, -w / 2f, -h / 2f, w, h);
+                using (SolidBrush sky = new SolidBrush(Color.FromArgb(120, 180, 235)))
+                    g.FillRectangle(sky, -w / 2f + 1.2f * s, -h / 2f + 1.2f * s, w - 2.4f * s, h - 2.4f * s);
+                using (SolidBrush hill = new SolidBrush(Color.FromArgb(90, 170, 90)))
+                    g.FillPolygon(hill, new[]
+                    {
+                        new PointF(-w / 2f + 1.2f * s, h / 2f - 1.2f * s),
+                        new PointF(-w / 8f, -h / 8f),
+                        new PointF(w / 2f - 1.2f * s, h / 2f - 1.2f * s),
+                    });
+            }
+            else
+            {
+                using (SolidBrush paper = new SolidBrush(Color.FromArgb(255, 248, 225)))
+                    g.FillRectangle(paper, -w / 2f, -h / 2f, w, h);
+                using (Pen lines = new Pen(Color.FromArgb(150, 150, 170), Math.Max(0.6f, 0.7f * s)))
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float y = -h / 2f + (2.5f + i * 2.6f) * s;
+                        g.DrawLine(lines, -w / 2f + 2f * s, y, w / 2f - (i == 2 ? 5f : 2f) * s, y);
+                    }
+                }
+                using (Pen edge = new Pen(Color.FromArgb(190, 180, 150), Math.Max(0.6f, 0.6f * s)))
+                    g.DrawRectangle(edge, -w / 2f, -h / 2f, w, h);
+            }
+            g.Restore(state);
+        }
+
+        /// <summary>The visitor's name floating above its head.</summary>
+        private static Font labelFontScaled;
+        private static float labelFontPx;
+
+        private static void DrawLabel(Graphics g, GoosePose p, string label)
+        {
+            float px = (float)Math.Round(11f * Math.Max(1f, p.scale * 0.75f));
+            if (labelFontScaled == null || px != labelFontPx)
+            {
+                if (labelFontScaled != null && labelFontScaled != labelFont) labelFontScaled.Dispose();
+                labelFontScaled = px == 11f ? labelFont : new Font("Arial", px, FontStyle.Bold, GraphicsUnit.Pixel);
+                labelFontPx = px;
+            }
+            Font font = labelFontScaled;
+            SizeF size = g.MeasureString(label, font);
+            float x = p.pos.x - size.Width / 2f;
+            float y = p.neckHeadPoint.y - 26f * p.scale - size.Height;
+            using (SolidBrush bg = new SolidBrush(Color.FromArgb(120, 20, 20, 30)))
+                g.FillRectangle(bg, x - 4f, y - 1f, size.Width + 8f, size.Height + 2f);
+            using (SolidBrush fg = new SolidBrush(Color.FromArgb(240, 255, 255, 255)))
+                g.DrawString(label, font, fg, x, y);
         }
 
         private void DrawFootmarks(Graphics g, GooseEntity ge, float now, float s)
@@ -188,12 +270,12 @@ namespace GooseDeluxe
             Circle(g, Color.FromArgb(200, 255, 255, 255), pupil + new Vector2(-0.7f, -0.7f) * s, 0.65f * s);
         }
 
-        private void DrawHat(Graphics g, GoosePose p)
+        private void DrawHat(Graphics g, GoosePose p, HatStyle hat)
         {
-            if (cfg.Hat == HatStyle.None) return;
+            if (hat == HatStyle.None) return;
             float s = p.scale;
             Vector2 top = p.neckHeadPoint + M.Up * 8f * s + p.fwdHead * 2.5f * s;
-            switch (cfg.Hat)
+            switch (hat)
             {
                 case HatStyle.TopHat:
                     {

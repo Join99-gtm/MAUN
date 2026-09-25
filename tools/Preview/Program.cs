@@ -34,11 +34,15 @@ internal static class Program
         frames.Add(Scenario("12-santa", HatStyle.Santa, Idle));
         frames.Add(Scenario("13-walk-left", HatStyle.None, WalkLeft));
         frames.Add(Scenario("14-stop-squash", HatStyle.None, StopSquash));
+        frames.Add(Scenario("15-carry-note", HatStyle.None, s => { Settle(s, 60); s.carry = CarryKind.Note; return Charge(s); }));
+        frames.Add(Scenario("16-carry-photo", HatStyle.None, s => { s.carry = CarryKind.Photo; return Walk(s); }));
+        frames.Add(Scenario("17-asleep", HatStyle.None, Asleep));
+        frames.Add(Scenario("18-guest-vasya", HatStyle.Santa, Guest));
 
         foreach (KeyValuePair<string, Bitmap> f in frames)
             f.Value.Save(Path.Combine(outDir, f.Key + ".png"), ImageFormat.Png);
 
-        int cols = 4, rows = (frames.Count + cols - 1) / cols;
+        int cols = 6, rows = (frames.Count + cols - 1) / cols;
         using (Bitmap sheet = new Bitmap(W * cols, H * rows))
         using (Graphics g = Graphics.FromImage(sheet))
         using (Font font = new Font("DejaVu Sans", 9f, FontStyle.Bold))
@@ -66,6 +70,8 @@ internal static class Program
         public GooseRenderer renderer;
         public ParticleSystem particles;
         public float now;
+        public CarryKind carry;
+        public string label;
         public const float Dt = 1f / 60f;
 
         public GoosePose Step()
@@ -115,11 +121,14 @@ internal static class Program
     {
         Sim s = NewSim(hat);
         GoosePose pose = run(s);
+        pose.carry = s.carry;
         Bitmap bmp = new Bitmap(W, H, PixelFormat.Format32bppArgb);
         using (Graphics g = Graphics.FromImage(bmp))
         {
             g.Clear(Background);
-            s.renderer.Draw(g, pose, s.goose, s.particles, s.now);
+            s.renderer.Prepare(g);
+            s.renderer.Draw(g, pose, s.goose, s.now, hat, s.label);
+            s.particles.Draw(g, s.now);
         }
         Console.WriteLine(name + ": particles=" + s.particles.Count + " beak=" + pose.beakOpen.ToString("0.00") +
             " wing=" + pose.wingOpen.ToString("0.00") + " blink=" + pose.blink.ToString("0.00") + " squash=" + pose.squash.ToString("0.00"));
@@ -222,6 +231,25 @@ internal static class Program
         Settle(s, 60);
         GooseAnimator.HeadlessMouseHeld = true;
         return s.Step();
+    }
+
+    private static GoosePose Asleep(Sim s)
+    {
+        Settle(s, 60);
+        s.animator.Asleep = true;
+        return Settle(s, 200); // eyes shut, head down, a couple of "z" in the air
+    }
+
+    private static GoosePose Guest(Sim s)
+    {
+        // a friend's goose: his colours, his hat, his name above its head
+        s.goose.renderData.brushGooseWhite = new SolidBrush(Color.FromArgb(255, 250, 246, 236));
+        s.goose.renderData.brushGooseOrange = new SolidBrush(Color.FromArgb(255, 240, 70, 60));
+        s.goose.renderData.brushGooseOutline = new SolidBrush(Color.FromArgb(255, 190, 180, 170));
+        s.label = "Вася";
+        s.goose.position.y += 40f; // headroom for the name tag above the hat
+        s.SetFeet();
+        return Settle(s, 60);
     }
 
     private static GoosePose StopSquash(Sim s)

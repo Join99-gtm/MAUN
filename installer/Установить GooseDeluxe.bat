@@ -14,7 +14,7 @@ goto :eof
 :notextracted
 echo.
 echo  The ZIP is not extracted yet.
-echo  Right-click GooseDeluxe-v0.1.zip -^> "Extract All...", then run this .bat
+echo  Right-click the GooseDeluxe ZIP -^> "Extract All...", then run this .bat
 echo  from the extracted folder.
 echo.
 echo  (Snachala raspakuy ZIP: pravoy knopkoy -^> "Izvlech vse...")
