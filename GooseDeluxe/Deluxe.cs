@@ -23,6 +23,7 @@ namespace GooseDeluxe
         public static ParticleSystem Particles;
         public static GooseAnimator Animator;
         public static FriendService Friends;
+        public static WinterScene Winter;
 
         /// <summary>What the goose holds in its beak while running off to a friend.</summary>
         public static CarryKind Carrying;

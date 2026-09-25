@@ -34,7 +34,7 @@ namespace GooseDeluxe
         }
 
         /// <summary>Draws one goose. Particles are drawn separately, once, above all geese.</summary>
-        public void Draw(Graphics g, GoosePose p, GooseEntity ge, float now, HatStyle hat, string label)
+        public void Draw(Graphics g, GoosePose p, GooseEntity ge, float now, HatStyle hat, string label, bool scarf = false)
         {
 
             Color white = ge.renderData.brushGooseWhite.Color;
@@ -69,6 +69,7 @@ namespace GooseDeluxe
             }
 
             DrawBody(g, p, white, outline);
+            if (scarf) DrawScarf(g, p);
 
             if (wings) DrawWing(g, p, nearSide, wingFill, false);
 
@@ -78,6 +79,31 @@ namespace GooseDeluxe
             DrawHat(g, p, hat);
             if (p.mouseHeld) DrawStruggle(g, p, now);
             if (!string.IsNullOrEmpty(label)) DrawLabel(g, p, label);
+        }
+
+        /// <summary>A red winter scarf around the neck, its end fluttering behind when the goose runs.</summary>
+        private static void DrawScarf(Graphics g, GoosePose p)
+        {
+            float s = p.scale;
+            Color red = Color.FromArgb(255, 208, 48, 56), dark = Color.FromArgb(255, 150, 28, 38), stripe = Color.FromArgb(255, 246, 240, 232);
+            Vector2 c = p.neckBase + (p.neckHeadPoint - p.neckBase) * 0.3f;
+            Vector2 down = M.Up * -1f;
+            // the loose end hangs behind the neck and streams back with speed
+            Vector2 t0 = c - p.fwd * 5f * s + down * 2f * s;
+            Vector2 t1 = t0 - p.fwd * (3f + 12f * p.speed01) * s + down * (10f - 6f * p.speed01) * s;
+            Line(g, dark, 6f * s, t0, t1);
+            Line(g, red, 4.6f * s, t0, t1);
+            Vector2 across = Vector2.Normalize(new Vector2(-(t1 - t0).y, (t1 - t0).x)) * 2.1f * s;
+            for (int i = 1; i <= 2; i++)
+            {
+                Vector2 m = Vector2.Lerp(t0, t1, 0.45f + 0.25f * i);
+                Line(g, stripe, 1.1f * s, m - across, m + across);
+            }
+            // the loop around the neck
+            Ellipse(g, dark, c + down * 0.8f * s, 8.4f * s, 4.1f * s);
+            Ellipse(g, red, c, 7.9f * s, 3.5f * s);
+            Line(g, stripe, 1.1f * s, c + new Vector2(-3f, -2.6f) * s, c + new Vector2(-3f, 2.6f) * s);
+            Line(g, stripe, 1.1f * s, c + new Vector2(3f, -2.6f) * s, c + new Vector2(3f, 2.6f) * s);
         }
 
         /// <summary>A folded note or a small photo held in the beak.</summary>

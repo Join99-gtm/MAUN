@@ -20,7 +20,7 @@ namespace GooseDeluxe
     /// </summary>
     internal sealed class Controller
     {
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
 
         private const int WM_HOTKEY_COME = 1, WM_HOTKEY_HONK = 2, WM_HOTKEY_PAUSE = 3;
         private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
@@ -38,6 +38,11 @@ namespace GooseDeluxe
         private DeckFixer deckFixer;
         private Guests guests;
         private Tray tray;
+        private WinterScene winter;
+        private AutumnControl autumn;
+        private Season season = Season.None;
+        private bool newYear;
+        private double nextSnowdriftRun = -1;
         private System.Windows.Forms.Timer timer;
         private GooseEntity.RenderFunction originalRender;
         private GooseEntity.TickFunction originalTick;
@@ -81,8 +86,12 @@ namespace GooseDeluxe
             try { RussianPack.Apply(Deluxe.GooseDir, cfg.RussianNotes); }
             catch (Exception ex) { Deluxe.Log("Russian pack: " + ex.Message); }
 
+            winter = new WinterScene();
+            Deluxe.Winter = winter;
+
             InjectionPoints.PreTickEvent += OnPreTick;
             InjectionPoints.PostTickEvent += OnPostTick;
+            InjectionPoints.PreRenderEvent += OnPreRender;
             InjectionPoints.PostRenderEvent += OnPostRender;
         }
 
@@ -130,8 +139,14 @@ namespace GooseDeluxe
                 {
                     tray = new Tray(this, AppIcon());
                     Deluxe.Notify = (t, m) => tray.Balloon(t, m);
+                    ShowTrayHintOnce();
                 });
             }
+            Guard("seasons", () =>
+            {
+                autumn = AutumnControl.Find();
+                UpdateSeason();
+            });
             if (cfg.Hotkeys) Guard("hotkeys", RegisterHotkeys);
             if (cfg.Friends)
             {
@@ -147,6 +162,7 @@ namespace GooseDeluxe
             Application.ApplicationExit += (s, e) => Cleanup();
             hooked = true;
             Deluxe.Log("Hooked. engine=" + Engine.Available + " settings=" + GooseSettings.Available + " deck=" + (deckFixer != null) +
+                       " season=" + season + " autumnMod=" + (autumn != null) +
                        " friends=" + (Deluxe.Friends != null ? GooseCode.Display(Deluxe.Friends.MyCode) : "off"));
         }
 
@@ -168,8 +184,23 @@ namespace GooseDeluxe
             if (Deluxe.Carrying != CarryKind.None && !Deluxe.IsCurrentTask(CarryTask.Id)) Deluxe.Carrying = CarryKind.None;
         }
 
+        /// <summary>Outside autumn the Autumn mod's leaf piles are removed as soon as it makes them.</summary>
+        private void SuppressLeaves()
+        {
+            if (autumn == null || season == Season.Autumn || season == Season.None) return;
+            try { autumn.Suppress(); }
+            catch (Exception ex) { Deluxe.Log("Leaf control disabled: " + ex.Message); autumn = null; }
+        }
+
+        // runs before the Autumn mod draws its piles, whichever mod was loaded first
+        private void OnPreRender(GooseEntity goose, Graphics unused)
+        {
+            if (hooked && !failed) SuppressLeaves();
+        }
+
         private void OnPostTick(GooseEntity goose)
         {
+            if (hooked && !failed) SuppressLeaves();
             if (!hooked || failed || guests == null) return;
             try { guests.Update(timestep != null ? timestep.LastSteps : 1); }
             catch (Exception ex) { Deluxe.Log("Visitors removed after an error: " + ex); guests.Clear(); }
@@ -198,12 +229,20 @@ namespace GooseDeluxe
                 {
                     renderer.Prepare(g);
                     List<KeyValuePair<float, Action>> draws = new List<KeyValuePair<float, Action>>();
+                    Vector2 screen = Deluxe.ScreenSize();
+                    bool scarf = cfg.WinterScarf && season == Season.Winter;
 
                     GooseEntity me = Deluxe.Goose;
+                    List<GooseEntity> onScreen = new List<GooseEntity> { me };
+                    foreach (Guest guest in guests.All) if (guest.GoneAt < 0f) onScreen.Add(guest.Entity);
+                    winter.Update(dt, now, screen, onScreen, particles, cfg.Scale);
+                    if (winter.AnythingToDraw) winter.DrawGround(g, now, screen, cfg.Scale);
+
                     animator.Asleep = Deluxe.Sleeping;
                     GoosePose mine = animator.Update(me, dt, now);
                     mine.carry = Deluxe.Carrying;
-                    draws.Add(new KeyValuePair<float, Action>(me.position.y, () => renderer.Draw(g, mine, me, now, cfg.Hat, null)));
+                    HatStyle myHat = cfg.Hat != HatStyle.None ? cfg.Hat : (newYear ? HatStyle.Santa : HatStyle.None);
+                    draws.Add(new KeyValuePair<float, Action>(me.position.y, () => renderer.Draw(g, mine, me, now, myHat, null, scarf)));
 
                     foreach (Guest guest in guests.All)
                     {
@@ -215,13 +254,14 @@ namespace GooseDeluxe
                         }
                         GoosePose pose = v.Animator.Update(v.Entity, dt, now);
                         string label = string.IsNullOrEmpty(v.Look.Name) ? "гость" : v.Look.Name;
-                        draws.Add(new KeyValuePair<float, Action>(v.Entity.position.y, () => renderer.Draw(g, pose, v.Entity, now, v.Look.Hat, label)));
+                        draws.Add(new KeyValuePair<float, Action>(v.Entity.position.y, () => renderer.Draw(g, pose, v.Entity, now, v.Look.Hat, label, scarf)));
                     }
                     draws.Sort((a, b) => a.Key.CompareTo(b.Key)); // lower on screen = closer = drawn last
                     foreach (KeyValuePair<float, Action> d in draws) d.Value();
 
                     particles.Update(dt, now);
                     particles.Draw(g, now);
+                    winter.DrawAir(g);
                 }
             }
             overlay.Present();
@@ -267,7 +307,9 @@ namespace GooseDeluxe
             Deluxe.RunUiQueue();
             timerTicks++;
             if (cfg.PauseInFullscreen && timerTicks % 3 == 0) CheckFullscreen();
+            if (timerTicks % 50 == 0) UpdateSeason(); // every 5 s: changing the system date takes effect quickly
             DispatchMail();
+            MaybeRunThroughSnow();
             // while frozen the goose doesn't paint, so a sleeping goose is animated from here
             if (Engine.Frozen && Deluxe.Sleeping && !Deluxe.HiddenForFullscreen)
             {
@@ -327,6 +369,40 @@ namespace GooseDeluxe
                 Time.TickTime();
                 DrawFrame(0.05f, Time.time); // clears the overlay when hidden, draws the sleeping goose otherwise
             }
+        }
+
+        // ---------------------------------------------------------------- seasons
+
+        private void UpdateSeason()
+        {
+            Season now = SeasonClock.Current(cfg.Seasons);
+            newYear = cfg.NewYearHat && now != Season.None && SeasonClock.IsNewYear(SeasonClock.Now());
+            if (now == season) return;
+            Deluxe.Log("Season: " + season + " -> " + now);
+            season = now;
+            winter.Active = season == Season.Winter;
+            if (season == Season.Winter) nextSnowdriftRun = clock.Elapsed.TotalSeconds + 20;
+        }
+
+        /// <summary>In winter, now and then, the goose charges through a snowdrift.</summary>
+        private void MaybeRunThroughSnow()
+        {
+            if (season != Season.Winter || Deluxe.Sleeping || Deluxe.HiddenForFullscreen) return;
+            double now = clock.Elapsed.TotalSeconds;
+            if (now < nextSnowdriftRun || !Deluxe.IsCurrentTask("Wander") || winter.PickDrift() == null) return;
+            nextSnowdriftRun = now + M.Rand(25f, 70f);
+            Deluxe.SetTask(ChaseSnowdriftTask.Id, false);
+        }
+
+        private void ShowTrayHintOnce()
+        {
+            string marker = Path.Combine(Deluxe.ModDir, "GooseDeluxe.version");
+            string seen = File.Exists(marker) ? File.ReadAllText(marker).Trim() : "";
+            if (seen == Version) return;
+            File.WriteAllText(marker, Version);
+            // a moment later, once the icon is registered with the taskbar
+            Deluxe.UiQueue.Enqueue(() => tray.Balloon("Гусь живёт у часов",
+                "Правой кнопкой по гусю у часов — всё меню. Не видно? Нажми стрелку ^ рядом с часами и перетащи гуся на панель задач."));
         }
 
         // ---------------------------------------------------------------- goose mail

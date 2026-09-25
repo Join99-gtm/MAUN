@@ -33,6 +33,12 @@ namespace Tests
             Run("Task: carry to a friend", TestCarry);
             Run("Task: deliver a note", TestDeliver);
             Run("Visiting geese", TestGuests);
+            Run("Seasons: calendar and settings", TestSeasonClock);
+            Run("Seasons: winter scene", TestWinter);
+            Run("Task: run through a snowdrift", TestSnowdriftRun);
+            string gooseDir = args.Length > 1 ? args[1] : null;
+            if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
+            else Console.WriteLine("(skipping Autumn mod test: pass the goose folder as the 2nd argument)");
             string mock = args.Length > 0 ? args[0] : null;
             if (mock != null) Run("ntfy end-to-end (mock server)", () => NetTests.Run(mock, Check));
             else Console.WriteLine("(skipping network tests: pass the path to mock_ntfy.py)");
@@ -381,6 +387,141 @@ namespace Tests
             w2.Windows[0].Gone = true;
             w2.Run(g2, 1f);
             Check("closing the note mid-drag frees the goose, no honk", w2.TaskOf(g2) == "Wander" && w2.Honks == 0);
+        }
+
+        // ------------------------------------------------------------------ seasons
+
+        private static void TestSeasonClock()
+        {
+            Season[] expected = { Season.Winter, Season.Winter, Season.Spring, Season.Spring, Season.Spring, Season.Summer,
+                                  Season.Summer, Season.Summer, Season.Autumn, Season.Autumn, Season.Autumn, Season.Winter };
+            bool monthsOk = true;
+            for (int m = 1; m <= 12; m++) if (SeasonClock.Of(new DateTime(2026, m, 15)) != expected[m - 1]) monthsOk = false;
+            Check("every month maps to its season", monthsOk);
+            Check("winter in Dec/Jan/Feb, autumn in Sep-Nov", SeasonClock.Of(new DateTime(2026, 12, 1)) == Season.Winter && SeasonClock.Of(new DateTime(2027, 2, 28)) == Season.Winter
+                  && SeasonClock.Of(new DateTime(2026, 9, 1)) == Season.Autumn && SeasonClock.Of(new DateTime(2026, 11, 30)) == Season.Autumn
+                  && SeasonClock.Of(new DateTime(2026, 3, 1)) == Season.Spring && SeasonClock.Of(new DateTime(2026, 8, 31)) == Season.Summer);
+            Func<DateTime> saved = SeasonClock.Now;
+            SeasonClock.Now = () => new DateTime(2026, 9, 25);
+            Check("Auto follows the date (September -> autumn)", SeasonClock.Current("Auto") == Season.Autumn);
+            SeasonClock.Now = () => new DateTime(2027, 1, 5);
+            Check("changing the date to January -> winter", SeasonClock.Current("Auto") == Season.Winter);
+            Check("forced season wins over the date", SeasonClock.Current("Summer") == Season.Summer);
+            Check("Off -> no seasons at all", SeasonClock.Current("Off") == Season.None);
+            SeasonClock.Now = saved;
+            Check("New Year window 20 Dec - 10 Jan", SeasonClock.IsNewYear(new DateTime(2026, 12, 20)) && SeasonClock.IsNewYear(new DateTime(2027, 1, 10))
+                  && !SeasonClock.IsNewYear(new DateTime(2026, 12, 19)) && !SeasonClock.IsNewYear(new DateTime(2027, 1, 11)));
+            Check("Russian setting names", SeasonClock.NormalizeSetting("Зима") == "Winter" && SeasonClock.NormalizeSetting(" осень ") == "Autumn"
+                  && SeasonClock.NormalizeSetting("выкл") == "Off" && SeasonClock.NormalizeSetting("когда-нибудь") == null);
+
+            string path = Path.Combine(Tmp, "Seasons.ini");
+            File.WriteAllText(path, new DeluxeConfig().ToIni(null).Replace("Seasons=Auto", "Seasons=Зима"), new UTF8Encoding(true));
+            Check("ini: Seasons=Зима is understood", DeluxeConfig.Load(path).Seasons == "Winter");
+            File.WriteAllText(path, "Seasons=когда-нибудь\r\n");
+            Check("ini: nonsense season falls back to Auto", DeluxeConfig.Load(path).Seasons == "Auto");
+            // the file 0.2 wrote: only the season keys are missing
+            string v02 = new DeluxeConfig().ToIni(null);
+            v02 = string.Join("\n", v02.Split('\n').Where(l => !l.StartsWith("Seasons=") && !l.StartsWith("WinterScarf=") && !l.StartsWith("NewYearHat=")));
+            File.WriteAllText(path, v02, new UTF8Encoding(true));
+            DeluxeConfig.Load(path);
+            string after = File.ReadAllText(path);
+            Check("ini from 0.2 gets the three season keys, marked 0.3", after.Contains("добавлено GooseDeluxe 0.3") && after.Contains("Seasons=Auto") && after.Contains("WinterScarf=True") && after.Contains("NewYearHat=True"));
+        }
+
+        private static GooseEntity Walker(Vector2 at)
+        {
+            GooseEntity g = new GooseEntity(e => { }, (r, p, d) => { }, (e, gfx) => { });
+            g.position = at;
+            g.rig.feets = new ProceduralFeets();
+            return g;
+        }
+
+        private static void TestWinter()
+        {
+            Vector2 screen = new Vector2(1280f, 720f);
+            WinterScene w = new WinterScene(new Random(5));
+            ParticleSystem ps = new ParticleSystem();
+            List<GooseEntity> nobody = new List<GooseEntity>();
+            float t = 0f;
+            Action<float> run = seconds => { for (int i = 0; i < (int)(seconds * 60); i++) { t += 1f / 60f; w.Update(1f / 60f, t, screen, nobody, ps, 1f); ps.Update(1f / 60f, t); } };
+
+            run(30f);
+            Check("not winter: no snow at all", w.FlakeCount == 0 && w.Drifts.Count == 0 && w.Bank == 0f);
+            w.Active = true;
+            int maxFlakes = 0; float maxIntensity = 0f;
+            for (int k = 0; k < 600; k++) { run(1f); maxFlakes = Math.Max(maxFlakes, w.FlakeCount); maxIntensity = Math.Max(maxIntensity, w.Intensity); }
+            Check("winter: it snows (" + maxFlakes + " flakes at the peak)", maxFlakes >= 30 && maxFlakes <= 140);
+            Check("winter: snowfall comes and goes", maxIntensity > 0.8f);
+            Check("winter: drifts appear (" + w.Drifts.Count + ")", w.Drifts.Count >= 1 && w.Drifts.Count <= WinterScene.MaxDrifts);
+            Check("winter: snow piles up along the bottom (" + w.Bank.ToString("0.0") + " px)", w.Bank > 3f && w.Bank <= WinterScene.MaxBank);
+
+            SnowDrift d = w.PickDrift();
+            GooseEntity goose = Walker(new Vector2(d.pos.x - 200f, d.pos.y));
+            List<GooseEntity> geese = new List<GooseEntity> { goose };
+            int before = ps.Count;
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            Check("a goose far away doesn't touch the drift", !d.Kicked);
+            goose.position = d.pos;
+            goose.velocity = new Vector2(400f, 0f);
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            Check("charging into a drift bursts it into snow", d.Kicked && ps.Count > before + 20, "particles " + before + " -> " + ps.Count);
+            for (int i = 0; i < 60; i++) w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            Check("the burst drift is gone", !w.Drifts.Contains(d));
+
+            goose.rig.feets.lFootMoveTimeStart = t;          // left foot in the air
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            goose.rig.feets.lFootMoveTimeStart = -1f;        // ... and down
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            Check("a step leaves a footprint in the snow", w.PrintCount == 1);
+            run(WinterScene.PrintLife + 1f);
+            Check("footprints fade away", w.PrintCount == 0);
+
+            w.Active = false;
+            run(90f);
+            Check("winter over: snow stops, drifts and the bank melt", w.FlakeCount == 0 && w.Drifts.Count == 0 && w.Bank == 0f && !w.AnythingToDraw);
+            goose.rig.feets.lFootMoveTimeStart = t;
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            goose.rig.feets.lFootMoveTimeStart = -1f;
+            w.Update(1f / 60f, t += 1f / 60f, screen, geese, ps, 1f);
+            Check("no footprints outside winter", w.PrintCount == 0);
+        }
+
+        private static void TestSnowdriftRun()
+        {
+            FakeWorld world = new FakeWorld();
+            GooseEntity g = world.NewGoose(new Vector2(200f, 400f));
+            Deluxe.Goose = g;
+            WinterScene winter = new WinterScene(new Random(3)) { Active = true };
+            Deluxe.Winter = winter;
+            SnowDrift d = winter.AddDrift(new Vector2(700f, 420f), 40f, 0f);
+            ParticleSystem ps = new ParticleSystem();
+            Check("switch to the snowdrift run", Deluxe.SetTask(ChaseSnowdriftTask.Id, false) && world.TaskOf(g) == ChaseSnowdriftTask.Id);
+            List<GooseEntity> geese = new List<GooseEntity> { g };
+            for (int frame = 0; frame < 60 * 12 && world.TaskOf(g) != "Wander"; frame++)
+            {
+                world.Run(g, 1f / 60f);
+                winter.Update(1f / 60f, world.Now, FakeWorld.Screen, geese, ps, 1f);
+            }
+            Check("the goose charged through the drift", d.Kicked);
+            Check("ran past it rather than stopping in front", g.position.x > 700f + 40f, g.position.x.ToString("0"));
+            Check("honked with joy and went back to wandering", world.Honks == 1 && world.TaskOf(g) == "Wander");
+            Deluxe.Winter = null;
+        }
+
+        private static void TestAutumnMod(string gooseDir)
+        {
+            string dll = Path.Combine(gooseDir, "Assets", "Mods", "Autumn", "Autumn.dll");
+            if (!File.Exists(dll)) { Check("Autumn.dll found", false, dll); return; }
+            System.Reflection.Assembly asm = System.Reflection.Assembly.LoadFrom(dll);
+            AutumnControl ctl = AutumnControl.Find();
+            Check("the Autumn mod's leaf list is found by reflection", ctl != null);
+            if (ctl == null) return;
+            System.Collections.IList piles = (System.Collections.IList)asm.GetType("Autumn.ModEntryPoint").GetField("piles").GetValue(null);
+            Type leafPile = asm.GetType("LeafPile");
+            piles.Add(Activator.CreateInstance(leafPile));
+            piles.Add(Activator.CreateInstance(leafPile));
+            Check("two leaf piles as the Autumn mod would make them", ctl.Count == 2);
+            Check("outside autumn they are removed", ctl.Suppress() == 2 && piles.Count == 0);
         }
 
         // ------------------------------------------------------------------ guests

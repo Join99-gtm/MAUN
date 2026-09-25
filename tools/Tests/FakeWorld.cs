@@ -56,6 +56,7 @@ namespace Tests
             Tasks.Add(new DeliverTask());
             Tasks.Add(new VisitTask());
             Tasks.Add(new LeaveTask());
+            Tasks.Add(new ChaseSnowdriftTask());
 
             API.Goose = new API.GooseFunctionPointers
             {
@@ -79,6 +80,7 @@ namespace Tests
             Deluxe.IsGuest = g => false;
             Deluxe.AnimatorFor = g => null;
             Deluxe.Carrying = CarryKind.None;
+            Deluxe.Winter = null;
             Deluxe.Sleeping = Deluxe.HiddenForFullscreen = false;
             CarryTask.Pending = null;
             DeliverTask.Pending = null;

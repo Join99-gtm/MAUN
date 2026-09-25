@@ -38,6 +38,10 @@ internal static class Program
         frames.Add(Scenario("16-carry-photo", HatStyle.None, s => { s.carry = CarryKind.Photo; return Walk(s); }));
         frames.Add(Scenario("17-asleep", HatStyle.None, Asleep));
         frames.Add(Scenario("18-guest-vasya", HatStyle.Santa, Guest));
+        frames.Add(Scenario("19-winter", HatStyle.None, WinterDay));
+        frames.Add(Scenario("20-new-year", HatStyle.Santa, s => { WinterDay(s); return Settle(s, 1); }));
+        frames.Add(Scenario("21-snowdrift-burst", HatStyle.None, SnowBurst));
+        frames.Add(Scenario("22-autumn-off-spring", HatStyle.None, s => { s.label = null; return Idle(s); }));
 
         foreach (KeyValuePair<string, Bitmap> f in frames)
             f.Value.Save(Path.Combine(outDir, f.Key + ".png"), ImageFormat.Png);
@@ -72,6 +76,8 @@ internal static class Program
         public float now;
         public CarryKind carry;
         public string label;
+        public bool scarf;
+        public WinterScene winter;
         public const float Dt = 1f / 60f;
 
         public GoosePose Step()
@@ -127,8 +133,10 @@ internal static class Program
         {
             g.Clear(Background);
             s.renderer.Prepare(g);
-            s.renderer.Draw(g, pose, s.goose, s.now, hat, s.label);
+            if (s.winter != null) s.winter.DrawGround(g, s.now, new Vector2(W, H), 2.4f);
+            s.renderer.Draw(g, pose, s.goose, s.now, hat, s.label, s.scarf);
             s.particles.Draw(g, s.now);
+            if (s.winter != null) s.winter.DrawAir(g);
         }
         Console.WriteLine(name + ": particles=" + s.particles.Count + " beak=" + pose.beakOpen.ToString("0.00") +
             " wing=" + pose.wingOpen.ToString("0.00") + " blink=" + pose.blink.ToString("0.00") + " squash=" + pose.squash.ToString("0.00"));
@@ -250,6 +258,49 @@ internal static class Program
         s.goose.position.y += 40f; // headroom for the name tag above the hat
         s.SetFeet();
         return Settle(s, 60);
+    }
+
+    /// <summary>Some minutes of snowfall: flakes in the air, snow on the "taskbar", a drift and footprints.</summary>
+    private static GoosePose WinterDay(Sim s)
+    {
+        Vector2 screen = new Vector2(W, H);
+        s.scarf = true;
+        s.winter = new WinterScene(new Random(11)) { Active = true };
+        List<GooseEntity> none = new List<GooseEntity>();
+        float t = 0f;
+        // run the snow until a heavy spell, so the frame shows snowfall
+        for (int i = 0; i < 6000 && !(t > 420f && s.winter.Intensity > 0.85f); i++) { t += 0.1f; s.winter.Update(0.1f, t, screen, none, s.particles, 2.4f); }
+        foreach (SnowDrift d in new List<SnowDrift>(s.winter.Drifts)) s.winter.Drifts.Remove(d);
+        s.winter.AddDrift(new Vector2(W * 0.86f, H * 0.93f), 34f * 2.4f * 0.6f, t - 5f);
+        // footprints behind the goose: a few steps landing along its path
+        GooseEntity walker = new GooseEntity(e => { }, (r, p, d) => { }, (e, gfx) => { });
+        walker.rig.feets = new ProceduralFeets();
+        List<GooseEntity> one = new List<GooseEntity> { walker };
+        for (int step = 0; step < 6; step++)
+        {
+            walker.position = s.goose.position - new Vector2(40f + step * 14f, (step % 2) * 12f - 6f) / 2.4f;
+            walker.direction = 0f;
+            walker.rig.feets.lFootPos = walker.position;
+            walker.rig.feets.lFootMoveTimeStart = t;
+            t += 0.05f; s.winter.Update(0.05f, t, screen, one, null, 2.4f);
+            walker.rig.feets.lFootMoveTimeStart = -1f;
+            t += 0.05f; s.winter.Update(0.05f, t, screen, one, null, 2.4f);
+        }
+        s.now = t;
+        s.goose.velocity = Vector2.zero;
+        return Settle(s, 30);
+    }
+
+    private static GoosePose SnowBurst(Sim s)
+    {
+        s.scarf = true;
+        s.winter = new WinterScene(new Random(4)) { Active = true };
+        s.goose.velocity = new Vector2(400f, 0f);
+        s.goose.stepInterval = 0.1f;
+        s.goose.rig.neckLerpPercent = 1f;
+        s.particles.SpawnSnowBurst(s.goose.position + new Vector2(30f, 0f), s.goose.velocity, 48, 2.4f, s.now);
+        for (int i = 0; i < 9; i++) s.particles.Update(Sim.Dt, s.now + i * Sim.Dt);
+        return Settle(s, 9);
     }
 
     private static GoosePose StopSquash(Sim s)

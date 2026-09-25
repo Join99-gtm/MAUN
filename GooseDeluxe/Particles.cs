@@ -6,7 +6,7 @@ using SamEngine;
 
 namespace GooseDeluxe
 {
-    internal enum ParticleKind { Dust, Feather, Text, SleepZ }
+    internal enum ParticleKind { Dust, Feather, Text, SleepZ, Snow }
 
     internal struct Particle
     {
@@ -78,6 +78,24 @@ namespace GooseDeluxe
             list.Add(p);
         }
 
+        /// <summary>A drift bursting as the goose charges through it: snow thrown up and forward.</summary>
+        public void SpawnSnowBurst(Vector2 at, Vector2 gooseVel, int count, float scale, float now)
+        {
+            Vector2 push = gooseVel * 0.35f;
+            for (int i = 0; i < count && list.Count < Max; i++)
+            {
+                Particle p = new Particle();
+                p.kind = ParticleKind.Snow;
+                p.pos = at + new Vector2(M.Rand(-14f, 14f), M.Rand(-10f, 2f)) * scale;
+                p.vel = push + new Vector2(M.Rand(-90f, 90f), M.Rand(-260f, -90f));
+                p.life = M.Rand(0.8f, 1.4f);
+                p.size = M.Rand(1.4f, 3.4f) * scale;
+                p.color = M.RandInt(4) == 0 ? Color.FromArgb(255, 222, 234, 250) : Color.FromArgb(255, 252, 253, 255);
+                p.born = now;
+                list.Add(p);
+            }
+        }
+
         public void SpawnSleepZ(Vector2 at, float scale, float now)
         {
             if (list.Count >= Max) return;
@@ -118,6 +136,10 @@ namespace GooseDeluxe
                     case ParticleKind.SleepZ:
                         p.vel.x = 14f + (float)Math.Sin(p.seed + age * 3f) * 10f;
                         break;
+                    case ParticleKind.Snow:
+                        p.vel.y += 520f * dt;
+                        p.vel.x *= 1f - 1.2f * dt;
+                        break;
                 }
                 p.pos += p.vel * dt;
                 list[i] = p;
@@ -157,6 +179,13 @@ namespace GooseDeluxe
                                 g.DrawLine(pen, 0f, -p.size * 1.1f, 0f, p.size * 1.1f);
                                 g.ResetTransform();
                             }
+                            break;
+                        }
+                    case ParticleKind.Snow:
+                        {
+                            float alpha = t > 0.6f ? (1f - t) / 0.4f : 1f;
+                            using (SolidBrush b = new SolidBrush(M.WithAlpha(p.color, alpha)))
+                                g.FillEllipse(b, p.pos.x - p.size / 2f, p.pos.y - p.size / 2f, p.size, p.size);
                             break;
                         }
                     case ParticleKind.SleepZ:

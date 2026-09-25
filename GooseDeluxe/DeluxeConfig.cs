@@ -41,6 +41,11 @@ namespace GooseDeluxe
         public string Language = "RU";
         public bool RussianNotes = true;
 
+        // seasons (0.3)
+        public string Seasons = "Auto";
+        public bool WinterScarf = true;
+        public bool NewYearHat = true;
+
         // friends (0.2)
         public bool Friends = true;
         public bool FriendCanStealMouse = true;
@@ -52,6 +57,7 @@ namespace GooseDeluxe
             "IdleAnimations", "Wings", "HonkAnimation", "Particles", "HonkText", "Hat", "Scale",
             "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes",
             "Friends", "FriendCanStealMouse", "NtfyServer",
+            "Seasons", "WinterScarf", "NewYearHat",
         };
 
         public static DeluxeConfig Load(string path)
@@ -98,6 +104,9 @@ namespace GooseDeluxe
             if (kv.TryGetValue("Language", out v) && (v.Equals("EN", StringComparison.OrdinalIgnoreCase) || v.Equals("RU", StringComparison.OrdinalIgnoreCase)))
                 c.Language = v.ToUpperInvariant();
             c.RussianNotes = GetBool(kv, "RussianNotes", c.RussianNotes);
+            if (kv.TryGetValue("Seasons", out v)) c.Seasons = SeasonClock.NormalizeSetting(v) ?? c.Seasons;
+            c.WinterScarf = GetBool(kv, "WinterScarf", c.WinterScarf);
+            c.NewYearHat = GetBool(kv, "NewYearHat", c.NewYearHat);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -115,7 +124,7 @@ namespace GooseDeluxe
                 {
                     string existing = File.ReadAllText(path);
                     string sep = existing.EndsWith("\n") ? "" : Environment.NewLine;
-                    File.AppendAllText(path, sep + Environment.NewLine + "; --- добавлено GooseDeluxe 0.2 ---" + Environment.NewLine + c.ToIni(missing), Encoding.UTF8);
+                    File.AppendAllText(path, sep + Environment.NewLine + "; --- добавлено GooseDeluxe " + DeluxeConfig.AddedIn(missing) + " ---" + Environment.NewLine + c.ToIni(missing), Encoding.UTF8);
                 }
                 catch { }
             }
@@ -158,10 +167,21 @@ namespace GooseDeluxe
             add("Friends", B(Friends), "Гусь к другу: записки, картинки и визиты через сервер ntfy");
             add("FriendCanStealMouse", B(FriendCanStealMouse), "Разрешить другу присылать гуся за твоим курсором");
             add("NtfyServer", NtfyServer, "Сервер для гусиной почты (можно свой ntfy)");
+            add("Seasons", Seasons, "Времена года: Auto — по дате, Off — выключить, или Winter/Spring/Summer/Autumn (можно по-русски: Зима…). Листья — только осенью, снег — зимой");
+            add("WinterScarf", B(WinterScarf), "Шарф на гусе зимой");
+            add("NewYearHat", B(NewYearHat), "Новогодняя шапка с 20 декабря по 10 января (если своя шляпа не выбрана)");
             return sb.ToString();
         }
 
         private static string B(bool b) { return b ? "True" : "False"; }
+
+        /// <summary>Version that introduced the first of these keys (for the comment above appended keys).</summary>
+        internal static string AddedIn(ICollection<string> keys)
+        {
+            foreach (string k in new[] { "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes", "Friends", "FriendCanStealMouse", "NtfyServer" })
+                if (keys.Contains(k)) return "0.2";
+            return "0.3";
+        }
 
         private static bool GetBool(Dictionary<string, string> kv, string key, bool def)
         {
