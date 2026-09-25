@@ -1,0 +1,165 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Text;
+using SamEngine;
+
+namespace GooseDeluxe
+{
+    internal enum ParticleKind { Dust, Feather, Text }
+
+    internal struct Particle
+    {
+        public ParticleKind kind;
+        public Vector2 pos;
+        public Vector2 vel;
+        public float born;
+        public float life;
+        public float seed;
+        public float size;
+        public string text;
+        public Color color;
+    }
+
+    /// <summary>Dust puffs when charging, feathers when honking/bumped, floating "HONK!" text.</summary>
+    internal sealed class ParticleSystem
+    {
+        private const int Max = 250;
+        private readonly List<Particle> list = new List<Particle>();
+        private static readonly Font textFont = new Font("Arial", 11f, FontStyle.Bold);
+        private static readonly Color dustColor = Color.FromArgb(150, 140, 120);
+
+        public int Count { get { return list.Count; } }
+
+        public void SpawnDust(Vector2 at, Vector2 gooseVel, float scale, float now)
+        {
+            if (list.Count >= Max) return;
+            Particle p = new Particle();
+            p.kind = ParticleKind.Dust;
+            p.pos = at + new Vector2(M.Rand(-3f, 3f), M.Rand(-2f, 2f)) * scale;
+            p.vel = Vector2.Normalize(gooseVel) * -M.Rand(15f, 45f) + new Vector2(M.Rand(-10f, 10f), M.Rand(-25f, -8f));
+            p.life = M.Rand(0.45f, 0.8f);
+            p.size = M.Rand(2.5f, 4.5f) * scale;
+            p.color = dustColor;
+            p.seed = M.Rand(0f, 100f);
+            p.born = now;
+            list.Add(p);
+        }
+
+        public void SpawnFeathers(Vector2 at, int count, float scale, Color color, float now)
+        {
+            for (int i = 0; i < count && list.Count < Max; i++)
+            {
+                Particle p = new Particle();
+                p.kind = ParticleKind.Feather;
+                p.pos = at + new Vector2(M.Rand(-6f, 6f), M.Rand(-8f, 2f)) * scale;
+                p.vel = new Vector2(M.Rand(-40f, 40f), M.Rand(-70f, -20f));
+                p.life = M.Rand(1.4f, 2.4f);
+                p.size = M.Rand(2.5f, 4f) * scale;
+                p.color = color;
+                p.seed = M.Rand(0f, 6.28f);
+                p.born = now;
+                list.Add(p);
+            }
+        }
+
+        public void SpawnText(Vector2 at, string text, Color color, float now)
+        {
+            if (list.Count >= Max) return;
+            Particle p = new Particle();
+            p.kind = ParticleKind.Text;
+            p.pos = at;
+            p.vel = new Vector2(M.Rand(-8f, 8f), -28f);
+            p.life = 1.1f;
+            p.text = text;
+            p.color = color;
+            p.seed = M.Rand(-12f, 12f);
+            p.born = now;
+            list.Add(p);
+        }
+
+        public void Update(float dt, float now)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                Particle p = list[i];
+                float age = now - p.born;
+                if (age > p.life) { list.RemoveAt(i); continue; }
+                switch (p.kind)
+                {
+                    case ParticleKind.Dust:
+                        p.vel = p.vel * (1f - 2.5f * dt);
+                        break;
+                    case ParticleKind.Feather:
+                        // Gentle fall with a side-to-side sway, like a real feather.
+                        p.vel.y += 55f * dt;
+                        p.vel.y = Math.Min(p.vel.y, 35f);
+                        p.vel.x = (float)Math.Sin(p.seed + age * 5f) * 30f;
+                        break;
+                    case ParticleKind.Text:
+                        p.vel = p.vel * (1f - 1.5f * dt);
+                        break;
+                }
+                p.pos += p.vel * dt;
+                list[i] = p;
+            }
+        }
+
+        public void Draw(Graphics g, float now)
+        {
+            if (list.Count == 0) return;
+            TextRenderingHint oldHint = g.TextRenderingHint;
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            for (int i = 0; i < list.Count; i++)
+            {
+                Particle p = list[i];
+                float t = M.Clamp01((now - p.born) / p.life);
+                switch (p.kind)
+                {
+                    case ParticleKind.Dust:
+                        {
+                            float r = p.size * (0.6f + t * 1.2f);
+                            using (SolidBrush b = new SolidBrush(M.WithAlpha(p.color, 0.45f * (1f - t))))
+                                g.FillEllipse(b, p.pos.x - r, p.pos.y - r * 0.8f, r * 2f, r * 1.6f);
+                            break;
+                        }
+                    case ParticleKind.Feather:
+                        {
+                            float alpha = t > 0.7f ? (1f - t) / 0.3f : 1f;
+                            float rot = (float)Math.Sin(p.seed + (now - p.born) * 5f) * 35f;
+                            using (SolidBrush b = new SolidBrush(M.WithAlpha(p.color, alpha)))
+                            using (Pen edge = new Pen(M.WithAlpha(Color.FromArgb(170, 170, 175), alpha), 1f))
+                            using (Pen pen = new Pen(M.WithAlpha(Color.FromArgb(190, 190, 195), alpha * 0.9f), 0.8f))
+                            {
+                                g.TranslateTransform(p.pos.x, p.pos.y);
+                                g.RotateTransform(rot);
+                                g.FillEllipse(b, -p.size * 0.5f, -p.size * 1.3f, p.size, p.size * 2.6f);
+                                g.DrawEllipse(edge, -p.size * 0.5f, -p.size * 1.3f, p.size, p.size * 2.6f);
+                                g.DrawLine(pen, 0f, -p.size * 1.1f, 0f, p.size * 1.1f);
+                                g.ResetTransform();
+                            }
+                            break;
+                        }
+                    case ParticleKind.Text:
+                        {
+                            float alpha = t > 0.55f ? (1f - t) / 0.45f : 1f;
+                            float pop = t < 0.15f ? 0.6f + 0.4f * (t / 0.15f) : 1f;
+                            SizeF sz = g.MeasureString(p.text, textFont);
+                            g.TranslateTransform(p.pos.x, p.pos.y);
+                            g.RotateTransform(p.seed);
+                            g.ScaleTransform(pop, pop);
+                            using (SolidBrush shadow = new SolidBrush(M.WithAlpha(Color.Black, alpha * 0.55f)))
+                            using (SolidBrush b = new SolidBrush(M.WithAlpha(p.color, alpha)))
+                            {
+                                g.DrawString(p.text, textFont, shadow, -sz.Width / 2f + 1f, -sz.Height / 2f + 1f);
+                                g.DrawString(p.text, textFont, b, -sz.Width / 2f, -sz.Height / 2f);
+                            }
+                            g.ResetTransform();
+                            break;
+                        }
+                }
+            }
+            g.TextRenderingHint = oldHint;
+        }
+    }
+}
