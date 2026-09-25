@@ -16,6 +16,8 @@ namespace GooseDeluxe
         public float born;
         public float kickedAt = -1f;
         public float meltAt = -1f;
+        /// <summary>A test drift made outside winter doesn't melt away before this time.</summary>
+        public float keepUntil = -1f;
         public bool Kicked { get { return kickedAt >= 0f; } }
         public bool Fading { get { return kickedAt >= 0f || meltAt >= 0f; } }
     }
@@ -108,7 +110,7 @@ namespace GooseDeluxe
             else
             {
                 nextDriftTime = -1f;
-                foreach (SnowDrift d in drifts) if (!d.Fading) d.meltAt = now;
+                foreach (SnowDrift d in drifts) if (!d.Fading && now > d.keepUntil) d.meltAt = now;
             }
 
             if (geese != null)

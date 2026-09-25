@@ -22,6 +22,10 @@
     <Compile Include="../../GooseDeluxe/Fixes/FixedTimestep.cs" />
     <Compile Include="../../GooseDeluxe/Fixes/DeckFixer.cs" />
     <Compile Include="../../GooseDeluxe/Fixes/GooseSettings.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/HotkeyPoller.cs" />
+    <Compile Include="../../GooseDeluxe/GooseHit.cs" />
+    <Compile Include="../../GooseDeluxe/ModInfo.cs" />
+    <Compile Include="../../GooseDeluxe/UI/IGooseControls.cs" />
     <Compile Include="../../GooseDeluxe/Net/*.cs" />
     <Compile Include="../../GooseDeluxe/Tasks/*.cs" />
     <Compile Include="../../GooseDeluxe/Seasons/*.cs" />

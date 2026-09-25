@@ -46,15 +46,43 @@ namespace GooseDeluxe
 
         /// <summary>Raised for WM_HOTKEY with the hotkey's id (the mod registers its hotkeys on this window).</summary>
         public event Action<int> HotkeyPressed;
+        /// <summary>The goose was right-clicked (only possible while <see cref="SetClickable"/> is on).</summary>
+        public event Action GooseRightClicked;
+
+        private bool clickable;
+
+        /// <summary>
+        /// Normally every click passes through the overlay. While the cursor is on the goose we drop
+        /// WS_EX_TRANSPARENT: the goose's own pixels then catch the mouse (transparent pixels still don't).
+        /// </summary>
+        public void SetClickable(bool on)
+        {
+            if (on == clickable || !IsHandleCreated) return;
+            clickable = on;
+            int ex = Native.GetWindowLong(Handle, Native.GWL_EXSTYLE);
+            ex = on ? ex & ~Native.WS_EX_TRANSPARENT : ex | Native.WS_EX_TRANSPARENT;
+            Native.SetWindowLong(Handle, Native.GWL_EXSTYLE, ex);
+        }
 
         protected override void WndProc(ref Message m)
         {
-            const int WM_HOTKEY = 0x0312;
-            if (m.Msg == WM_HOTKEY)
+            const int WM_HOTKEY = 0x0312, WM_MOUSEACTIVATE = 0x0021, WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
+            const int MA_NOACTIVATE = 3;
+            switch (m.Msg)
             {
-                Action<int> h = HotkeyPressed;
-                if (h != null) h(m.WParam.ToInt32());
-                return;
+                case WM_HOTKEY:
+                    Action<int> h = HotkeyPressed;
+                    if (h != null) h(m.WParam.ToInt32());
+                    return;
+                case WM_MOUSEACTIVATE:
+                    m.Result = (IntPtr)MA_NOACTIVATE; // clicking the goose must not steal focus
+                    return;
+                case WM_RBUTTONDOWN:
+                    return;
+                case WM_RBUTTONUP:
+                    Action r = GooseRightClicked;
+                    if (r != null) r();
+                    return;
             }
             base.WndProc(ref m);
         }

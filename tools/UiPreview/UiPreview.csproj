@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Opens the mod's real WinForms windows (control panel, dialogs, note) with a fake goose, for screenshots
+       under Mono + Xvfb. Run: xvfb-run mono bin/Release/net452/UiPreview.exe <mode> <out.png> -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net452</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <DefineConstants>HEADLESS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../GooseDeluxe/*.cs" Exclude="../../GooseDeluxe/Controller.cs;../../GooseDeluxe/ModEntryPoint.cs;../../GooseDeluxe/OverlayWindow.cs;../../GooseDeluxe/Native.cs" />
+    <Compile Include="../../GooseDeluxe/Net/*.cs" />
+    <Compile Include="../../GooseDeluxe/Tasks/*.cs" />
+    <Compile Include="../../GooseDeluxe/Seasons/*.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/FixedTimestep.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/DeckFixer.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/HotkeyPoller.cs" />
+    <Compile Include="../../GooseDeluxe/Fixes/GooseSettings.cs" />
+    <Compile Include="../../GooseDeluxe/UI/ControlPanel.cs" />
+    <Compile Include="../../GooseDeluxe/UI/IGooseControls.cs" />
+    <Compile Include="../../GooseDeluxe/UI/Dialogs.cs" />
+    <Compile Include="../../GooseDeluxe/UI/NoteForm.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="GooseModdingAPI">
+      <HintPath>../../lib/GooseModdingAPI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

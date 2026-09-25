@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../GooseDeluxe/M.cs" />
+    <Compile Include="../../GooseDeluxe/ModInfo.cs" />
     <Compile Include="../../GooseDeluxe/Deluxe.cs" />
     <Compile Include="../../GooseDeluxe/DeluxeConfig.cs" />
     <Compile Include="../../GooseDeluxe/RussianPack.cs" />

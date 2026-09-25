@@ -19,6 +19,10 @@ namespace GooseDeluxe
             c = controller;
             menu = new ContextMenuStrip();
 
+            ToolStripMenuItem panel = Add(menu.Items, "Пульт и настройки…", "Ctrl+Alt+M", (s, e) => ControlPanel.Open(c));
+            panel.Font = new Font(panel.Font, FontStyle.Bold);
+            Add(menu.Items, "Проверка…", null, (s, e) => ControlPanel.Open(c, 2));
+            menu.Items.Add(new ToolStripSeparator());
             Add(menu.Items, "Позвать гуся", "Ctrl+Alt+G", (s, e) => c.Come());
             Add(menu.Items, "Гудок", "Ctrl+Alt+H", (s, e) => c.HonkNow());
             Add(menu.Items, "Принести мем", null, (s, e) => c.RunGooseTask("CollectMeme"));
@@ -48,7 +52,7 @@ namespace GooseDeluxe
             pauseItem = Add(menu.Items, "Пауза (гусь спит)", "Ctrl+Alt+P", (s, e) => c.TogglePause());
             muteItem = Add(menu.Items, "Без звука", null, (s, e) => c.ToggleMute());
             mouseItem = Add(menu.Items, "Гусь может красть курсор", null, (s, e) => c.ToggleMouseStealing());
-            Add(menu.Items, "Настройки мода…", null, (s, e) => c.OpenSettings());
+            Add(menu.Items, "Настройки…", null, (s, e) => ControlPanel.Open(c, 1));
             menu.Items.Add(new ToolStripSeparator());
             Add(menu.Items, "Выгнать гуся", null, (s, e) => c.Exit());
 
@@ -61,7 +65,12 @@ namespace GooseDeluxe
                 ContextMenuStrip = menu,
                 Visible = true,
             };
-            icon.DoubleClick += (s, e) => c.Come();
+            icon.MouseClick += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left) return;
+                try { ControlPanel.Open(c); }
+                catch (Exception ex) { Deluxe.Log("Panel failed to open: " + ex); }
+            };
             icon.BalloonTipClicked += (s, e) => c.BalloonClicked();
         }
 
@@ -103,6 +112,15 @@ namespace GooseDeluxe
         {
             Uri u;
             return Uri.TryCreate(url, UriKind.Absolute, out u) ? u.Host : url;
+        }
+
+        /// <summary>The same menu at the mouse (right-click on the goose).</summary>
+        public void ShowMenuAt(Point at)
+        {
+            Refresh();
+            menu.Show(at);
+            // without being the foreground window the menu wouldn't close when clicking elsewhere
+            Native.SetForegroundWindow(menu.Handle);
         }
 
         public void Balloon(string title, string text)

@@ -175,6 +175,35 @@ namespace GooseDeluxe
 
         private static string B(bool b) { return b ? "True" : "False"; }
 
+        /// <summary>A setting's value as the ini writes it (for saving one key at a time).</summary>
+        public string ValueText(string key)
+        {
+            System.Reflection.FieldInfo f = typeof(DeluxeConfig).GetField(key);
+            if (f == null) throw new ArgumentException("unknown setting " + key);
+            object v = f.GetValue(this);
+            if (v is bool) return B((bool)v);
+            if (v is float) return ((float)v).ToString(CultureInfo.InvariantCulture);
+            return Convert.ToString(v, CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Writes the given keys into the ini, one line each: replaces "Key=..." where it is and appends it
+        /// otherwise. Comments, order and anything the user added stay as they are.
+        /// </summary>
+        public void Save(string path, params string[] keys)
+        {
+            string text = File.Exists(path) ? File.ReadAllText(path) : "";
+            foreach (string key in keys)
+            {
+                string line = key + "=" + ValueText(key);
+                System.Text.RegularExpressions.Regex rx = new System.Text.RegularExpressions.Regex(
+                    "(?mi)^[ \\t]*" + System.Text.RegularExpressions.Regex.Escape(key) + "[ \\t]*=[^\\r\\n]*");
+                if (rx.IsMatch(text)) text = rx.Replace(text, line.Replace("$", "$$"), 1);
+                else text = text.TrimEnd('\r', '\n') + (text.Length > 0 ? Environment.NewLine : "") + line + Environment.NewLine;
+            }
+            File.WriteAllText(path, text, new UTF8Encoding(true));
+        }
+
         /// <summary>Version that introduced the first of these keys (for the comment above appended keys).</summary>
         internal static string AddedIn(ICollection<string> keys)
         {

@@ -36,6 +36,7 @@ namespace Tests
             Run("Seasons: calendar and settings", TestSeasonClock);
             Run("Seasons: winter scene", TestWinter);
             Run("Task: run through a snowdrift", TestSnowdriftRun);
+            Run("Пульт: горячие клавиши, клик по гусю, сохранение, отчёт", TestPanelLogic);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
             else Console.WriteLine("(skipping Autumn mod test: pass the goose folder as the 2nd argument)");
@@ -522,6 +523,59 @@ namespace Tests
             piles.Add(Activator.CreateInstance(leafPile));
             Check("two leaf piles as the Autumn mod would make them", ctl.Count == 2);
             Check("outside autumn they are removed", ctl.Suppress() == 2 && piles.Count == 0);
+        }
+
+        // ------------------------------------------------------------------ control panel logic
+
+        private static void TestPanelLogic()
+        {
+            // запасной способ горячих клавиш: опрос клавиатуры
+            HashSet<int> down = new HashSet<int>();
+            double t = 0;
+            HotkeyPoller poller = new HotkeyPoller(vk => down.Contains(vk), () => t);
+            char[] keys = { 'G', 'H', 'P', 'M' };
+            Check("без нажатий ничего не срабатывает", poller.Poll(keys).Count == 0);
+            down.Add('H');
+            Check("H без Ctrl+Alt не срабатывает", poller.Poll(keys).Count == 0);
+            down.Add(HotkeyPoller.VK_CONTROL); down.Add(HotkeyPoller.VK_MENU);
+            down.Remove('H'); poller.Poll(keys); t += 0.1;
+            down.Add('H');
+            List<char> fired = poller.Poll(keys);
+            Check("Ctrl+Alt+H срабатывает один раз", fired.Count == 1 && fired[0] == 'H');
+            t += 0.1;
+            Check("удержание не повторяет", poller.Poll(keys).Count == 0);
+            down.Remove('H'); t += 0.1; poller.Poll(keys);
+            poller.MarkFired('M'); down.Add('M'); t += 0.1;
+            Check("нажатие, уже пойманное системой (WM_HOTKEY), не дублируется", poller.Poll(keys).Count == 0);
+            down.Remove('M'); t += 1.0; poller.Poll(keys); down.Add('M'); t += 0.1;
+            Check("следующее нажатие снова работает", poller.Poll(keys).Count == 1);
+
+            // правый клик: попадание в гуся
+            GoosePose p = new GoosePose { scale = 1f, bodyCenter = new Vector2(100, 100), neckBase = new Vector2(115, 100), neckHeadPoint = new Vector2(118, 80) };
+            Check("клик по телу — это гусь", GooseHit.IsOnGoose(p, new Vector2(105, 104)));
+            Check("клик по голове — это гусь", GooseHit.IsOnGoose(p, new Vector2(120, 78)));
+            Check("клик рядом — не гусь", !GooseHit.IsOnGoose(p, new Vector2(160, 100)) && !GooseHit.IsOnGoose(p, new Vector2(100, 140)));
+            p.scale = 2f;
+            Check("у большого гуся и зона больше", GooseHit.IsOnGoose(p, new Vector2(140, 100)));
+
+            // сохранение одной настройки, не трогая остальное
+            string path = Path.Combine(Tmp, "Save.ini");
+            File.WriteAllText(path, "; мой комментарий\r\nHat=None\r\nScale = 1\r\nFoo=bar\r\n", new UTF8Encoding(true));
+            DeluxeConfig c = new DeluxeConfig { Hat = HatStyle.Santa, Scale = 1.5f, Seasons = "Winter" };
+            c.Save(path, "Hat", "Scale", "Seasons");
+            string text = File.ReadAllText(path);
+            Check("строки заменены на месте", text.Contains("Hat=Santa") && text.Contains("Scale=1.5") && !text.Contains("Hat=None") && !text.Contains("Scale = 1\r"));
+            Check("новая строка дописана, чужое не тронуто", text.Contains("Seasons=Winter") && text.Contains("; мой комментарий") && text.Contains("Foo=bar"));
+            DeluxeConfig back = DeluxeConfig.Load(path);
+            Check("и читается обратно", back.Hat == HatStyle.Santa && Math.Abs(back.Scale - 1.5f) < 1e-6 && back.Seasons == "Winter");
+
+            // отчёт для «Скопировать отчёт»
+            string report = DiagReport.Build(new List<DiagItem>
+            {
+                new DiagItem(DiagLevel.Ok, "Мод загружен", "0.4.0"),
+                new DiagItem(DiagLevel.Fail, "Значок у часов", "не создан"),
+            }, "строка лога");
+            Check("отчёт содержит проверки и лог", report.Contains("✔ Мод загружен: 0.4.0") && report.Contains("✖ Значок у часов: не создан") && report.Contains("строка лога"));
         }
 
         // ------------------------------------------------------------------ guests

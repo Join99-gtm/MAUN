@@ -64,7 +64,6 @@ namespace GooseDeluxe
 #if HEADLESS
         public static bool HeadlessMouseHeld;
 #endif
-        private readonly string[] honkWords;
         private float nextZTime;
         private float sleepBlend;
 
@@ -80,7 +79,6 @@ namespace GooseDeluxe
         {
             this.cfg = cfg;
             this.particles = particles;
-            honkWords = RussianPack.HonkWords(cfg.Language);
         }
 
         public void Honk(GooseEntity g, float now)
@@ -349,7 +347,10 @@ namespace GooseDeluxe
             if (!cfg.Particles) return;
             Vector2 beak = g.position + M.Up * 34f * scale + Vector2.GetFromAngleDegrees(renderDir) * 26f * scale;
             if (cfg.HonkText)
+            {
+                string[] honkWords = RussianPack.HonkWords(cfg.Language); // read live: the panel can switch it
                 particles.SpawnText(beak + M.Up * 14f * scale, honkWords[M.RandInt(honkWords.Length)], Color.FromArgb(255, 245, 245, 245), now);
+            }
             particles.SpawnFeathers(g.position + M.Up * 38f * scale - Vector2.GetFromAngleDegrees(renderDir) * 6f * scale, 2, scale, g.renderData.brushGooseWhite.Color, now);
         }
     }

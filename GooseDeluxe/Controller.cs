@@ -18,16 +18,18 @@ namespace GooseDeluxe
     /// Every entry point is guarded: if something here throws, the goose keeps running and the
     /// failure is logged to GooseDeluxe.log.
     /// </summary>
-    internal sealed class Controller
+    internal sealed class Controller : IGooseControls
     {
-        public const string Version = "0.3.0";
+        public const string Version = ModInfo.Version;
 
-        private const int WM_HOTKEY_COME = 1, WM_HOTKEY_HONK = 2, WM_HOTKEY_PAUSE = 3;
+        private const int WM_HOTKEY_COME = 1, WM_HOTKEY_HONK = 2, WM_HOTKEY_PAUSE = 3, WM_HOTKEY_MENU = 4;
+        private static readonly char[] HotkeyLetters = { 'G', 'H', 'P', 'M' };
         private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
 
         [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);
         [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         private DeluxeConfig cfg;
         private OverlayWindow overlay;
@@ -47,6 +49,16 @@ namespace GooseDeluxe
         private GooseEntity.RenderFunction originalRender;
         private GooseEntity.TickFunction originalTick;
         private readonly List<int> hotkeys = new List<int>();
+        private readonly Dictionary<char, string> hotkeyState = new Dictionary<char, string>();
+        private HotkeyPoller poller;
+        private string lastHotkey = "";
+        private double lastHotkeyAt = -1, lastRightClickAt = -1;
+        private string trayError, hotkeyError;
+        private int framesCounted, ticksCounted;
+        private double rateWindowStart;
+        private float fps, ticksPerSecond;
+        private double welcomeAt = -1, selfTestSentAt = -1, selfTestBackAt = -1;
+        private string IniPath { get { return Path.Combine(Deluxe.ModDir, "GooseDeluxe.ini"); } }
 
         private bool hooked, failed;
         private float lastRenderTime = -1f;
@@ -135,19 +147,27 @@ namespace GooseDeluxe
 
             if (cfg.Tray)
             {
-                Guard("tray", () =>
+                try
                 {
                     tray = new Tray(this, AppIcon());
                     Deluxe.Notify = (t, m) => tray.Balloon(t, m);
-                    ShowTrayHintOnce();
-                });
+                }
+                catch (Exception ex) { trayError = ex.Message; Deluxe.Log("tray failed: " + ex); }
             }
             Guard("seasons", () =>
             {
                 autumn = AutumnControl.Find();
                 UpdateSeason();
             });
-            if (cfg.Hotkeys) Guard("hotkeys", RegisterHotkeys);
+            if (cfg.Hotkeys)
+            {
+                try { RegisterHotkeys(); }
+                catch (Exception ex) { hotkeyError = ex.Message; Deluxe.Log("hotkeys failed: " + ex); }
+                // backup that works even when another program owns the combination
+                poller = new HotkeyPoller(vk => (GetAsyncKeyState(vk) & 0x8001) != 0, () => clock.Elapsed.TotalSeconds);
+            }
+            overlay.GooseRightClicked += () => Guard("right click", ShowGooseMenu);
+            Guard("what's new", ShowWhatsNewOnce);
             if (cfg.Friends)
             {
                 Guard("friends", () =>
@@ -215,6 +235,16 @@ namespace GooseDeluxe
                 float dt = lastRenderTime < 0f ? 1f / 60f : M.Clamp(now - lastRenderTime, 0f, 0.1f);
                 lastRenderTime = now;
                 DrawFrame(dt, now);
+                framesCounted++;
+                if (timestep != null) ticksCounted += timestep.LastSteps;
+                double t = clock.Elapsed.TotalSeconds;
+                if (t - rateWindowStart >= 1.0)
+                {
+                    fps = (float)(framesCounted / (t - rateWindowStart));
+                    ticksPerSecond = (float)(ticksCounted / (t - rateWindowStart));
+                    framesCounted = ticksCounted = 0;
+                    rateWindowStart = t;
+                }
             }
             catch (Exception ex) { Fail(goose, ex); }
         }
@@ -266,6 +296,7 @@ namespace GooseDeluxe
             }
             overlay.Present();
             if (!Deluxe.HiddenForFullscreen) overlay.KeepOnTop();
+            UpdateClickable();
         }
 
         private static void NoRender(GooseEntity g, Graphics gfx) { }
@@ -308,6 +339,9 @@ namespace GooseDeluxe
             timerTicks++;
             if (cfg.PauseInFullscreen && timerTicks % 3 == 0) CheckFullscreen();
             if (timerTicks % 50 == 0) UpdateSeason(); // every 5 s: changing the system date takes effect quickly
+            if (poller != null)
+                foreach (char key in poller.Poll(HotkeyLetters)) OnHotkey(key, "опрос клавиатуры");
+            MaybeWelcome();
             DispatchMail();
             MaybeRunThroughSnow();
             // while frozen the goose doesn't paint, so a sleeping goose is animated from here
@@ -394,15 +428,54 @@ namespace GooseDeluxe
             Deluxe.SetTask(ChaseSnowdriftTask.Id, false);
         }
 
-        private void ShowTrayHintOnce()
+        /// <summary>First start of a new version: a balloon from the tray icon and a note brought by the goose.</summary>
+        private void ShowWhatsNewOnce()
         {
             string marker = Path.Combine(Deluxe.ModDir, "GooseDeluxe.version");
             string seen = File.Exists(marker) ? File.ReadAllText(marker).Trim() : "";
             if (seen == Version) return;
             File.WriteAllText(marker, Version);
-            // a moment later, once the icon is registered with the taskbar
-            Deluxe.UiQueue.Enqueue(() => tray.Balloon("Гусь живёт у часов",
-                "Правой кнопкой по гусю у часов — всё меню. Не видно? Нажми стрелку ^ рядом с часами и перетащи гуся на панель задач."));
+            welcomeAt = clock.Elapsed.TotalSeconds + 6;
+            if (tray != null)
+                Deluxe.UiQueue.Enqueue(() => tray.Balloon("Гусь обновился до " + Version,
+                    "Нажми на гуся правой кнопкой мыши — там меню и пульт. Значок гуся — у часов (может прятаться под стрелкой ^)."));
+        }
+
+        private void MaybeWelcome()
+        {
+            if (welcomeAt < 0 || clock.Elapsed.TotalSeconds < welcomeAt) return;
+            if (Deluxe.Sleeping || Deluxe.HiddenForFullscreen || !Deluxe.IsCurrentTask("Wander")) return;
+            welcomeAt = -1;
+            DeliverTask.Pending = new DeliveryPayload
+            {
+                FromName = "гуся",
+                Text = "Привет! Я обновился: GooseDeluxe " + Version + ".\n\n" +
+                       "Нажми на меня ПРАВОЙ кнопкой мыши — там меню и пульт с настройками. Или Ctrl+Alt+M.\n\n" +
+                       "Во вкладке «Проверка» видно, что у меня работает. Га!",
+            };
+            if (!Deluxe.SetTask(DeliverTask.Id, false)) DeliverTask.Pending = null;
+        }
+
+        /// <summary>The overlay catches mouse clicks only while the cursor is on the goose (for the right-click menu).</summary>
+        private void UpdateClickable()
+        {
+            if (overlay == null) return;
+            bool near = false;
+            if (!Deluxe.HiddenForFullscreen && animator.HasPose)
+            {
+                GoosePose p = animator.Pose;
+                Point cur = Cursor.Position;
+                Rectangle b = MainWindowBounds();
+                near = GooseHit.IsOnGoose(p, new Vector2(cur.X - b.X, cur.Y - b.Y));
+            }
+            overlay.SetClickable(near);
+        }
+
+        private void ShowGooseMenu()
+        {
+            lastRightClickAt = clock.Elapsed.TotalSeconds;
+            if (tray != null) tray.ShowMenuAt(Cursor.Position);
+            else ControlPanel.Open(this);
         }
 
         // ---------------------------------------------------------------- goose mail
@@ -453,6 +526,7 @@ namespace GooseDeluxe
 
         private void Visit(FriendService f, Incoming x, double now)
         {
+            if (x.FromCode != null && x.FromCode == f.MyCode) selfTestBackAt = clock.Elapsed.TotalSeconds;
             string task;
             DeliveryPayload payload = null;
             if (x.Kind == IncomingKind.Command)
@@ -673,25 +747,272 @@ namespace GooseDeluxe
             killer.Start();
         }
 
+        // ---------------------------------------------------------------- control panel (IGooseControls)
+
+        public DeluxeConfig Config { get { return cfg; } }
+        public bool Paused { get { return Deluxe.Sleeping; } }
+        public bool GooseSettingsAvailable { get { return GooseSettings.Available; } }
+        public bool Muted { get { return GooseSettings.SilenceSounds; } set { GooseSettings.SilenceSounds = value; } }
+        public bool GooseMayStealMouse { get { return GooseSettings.CanAttackMouse; } set { GooseSettings.CanAttackMouse = value; } }
+        public bool FriendsEnabled { get { return Deluxe.Friends != null; } }
+        public bool HasFriend { get { return Deluxe.Friends != null && (Deluxe.Friends.HasFriend || Deluxe.Friends.LastSenderCode != null); } }
+
+        public string FriendName
+        {
+            get
+            {
+                FriendService f = Deluxe.Friends;
+                if (f == null) return "";
+                return f.HasFriend ? f.FriendName : (f.LastSenderName ?? "друг");
+            }
+        }
+
+        public string MyCodeDisplay { get { return Deluxe.Friends != null ? GooseCode.Display(Deluxe.Friends.MyCode) : "—"; } }
+
+        public void SendNote() { SendNote(null, null); }
+
+        /// <summary>Applies a setting changed in the panel right away and saves just that line of the ini.</summary>
+        public void ApplyConfig(string key)
+        {
+            switch (key)
+            {
+                case "FixSpeed":
+                    if (timestep != null) { timestep.Enabled = cfg.FixSpeed; timestep.Reset(); }
+                    break;
+                case "HonestRandom":
+                    if (!cfg.HonestRandom) deckFixer = null;
+                    else if (deckFixer == null)
+                    {
+                        Func<Deck> deck = DeckFixer.FromGooseDatabase();
+                        if (deck != null) deckFixer = new DeckFixer(deck);
+                    }
+                    break;
+                case "PauseInFullscreen":
+                    if (!cfg.PauseInFullscreen && Deluxe.HiddenForFullscreen)
+                    {
+                        Deluxe.HiddenForFullscreen = false;
+                        ApplyEngineState();
+                    }
+                    break;
+                case "RussianNotes":
+                    RussianPack.Apply(Deluxe.GooseDir, cfg.RussianNotes);
+                    break;
+                case "Seasons":
+                case "NewYearHat":
+                    UpdateSeason();
+                    break;
+            }
+            cfg.Save(IniPath, key);
+            Deluxe.Log("Setting " + key + "=" + cfg.ValueText(key));
+        }
+
+        private static string Ago(double seconds)
+        {
+            if (seconds < 90) return seconds.ToString("0") + " с назад";
+            return (seconds / 60).ToString("0") + " мин назад";
+        }
+
+        private static string HostOf(string url)
+        {
+            Uri u;
+            return Uri.TryCreate(url, UriKind.Absolute, out u) ? u.Host : url;
+        }
+
+        private static string SeasonName(Season s)
+        {
+            switch (s)
+            {
+                case Season.Winter: return "зима";
+                case Season.Spring: return "весна";
+                case Season.Summer: return "лето";
+                case Season.Autumn: return "осень";
+                default: return "выключены";
+            }
+        }
+
+        public List<DiagItem> RunDiagnostics()
+        {
+            List<DiagItem> list = new List<DiagItem>();
+            double now = clock.Elapsed.TotalSeconds;
+            Action<DiagLevel, string, string> add = (l, t, d) => list.Add(new DiagItem(l, t, d));
+
+            add(DiagLevel.Ok, "Мод загружен", "GooseDeluxe " + Version + " — " + typeof(Controller).Assembly.Location);
+            if (overlay != null && overlay.IsHandleCreated)
+                add(DiagLevel.Ok, "Рисование гуся", "окно " + overlay.Width + "×" + overlay.Height + (Engine.Frozen ? ", гусь спит" : ", " + fps.ToString("0") + " кадров/с"));
+            else add(DiagLevel.Fail, "Рисование гуся", "своё окно не создано — гусь рисуется по-старому (причина в журнале)");
+            add(Engine.Available ? DiagLevel.Ok : DiagLevel.Warn, "Подключение к движку гуся",
+                Engine.Available ? "пауза и прятки в играх работают полностью" : "не получилось — пауза и прятки работают частично");
+            add(GooseSettings.Available ? DiagLevel.Ok : DiagLevel.Warn, "Настройки гуся (config.ini)",
+                GooseSettings.Available ? "звук " + (Muted ? "выключен" : "включён") + ", кража курсора " + (GooseMayStealMouse ? "разрешена" : "запрещена")
+                                        : "нет доступа — «Без звука» и «Красть курсор» из пульта не работают");
+
+            if (!cfg.FixSpeed) add(DiagLevel.Info, "Правильная скорость", "выключена в настройках");
+            else if (Engine.Frozen || Deluxe.HiddenForFullscreen || fps <= 0f) add(DiagLevel.Info, "Правильная скорость", "гусь сейчас спит — проверю, когда проснётся");
+            else
+            {
+                bool good = ticksPerSecond > 105f && ticksPerSecond < 135f;
+                add(good ? DiagLevel.Ok : DiagLevel.Warn, "Правильная скорость",
+                    ticksPerSecond.ToString("0") + " шагов в секунду (нужно около 120) при " + fps.ToString("0") + " кадрах/с");
+            }
+
+            if (deckFixer != null) add(DiagLevel.Ok, "Честный рандом", "колода проделок перетасована " + deckFixer.Fixes + " раз");
+            else add(cfg.HonestRandom ? DiagLevel.Warn : DiagLevel.Info, "Честный рандом", cfg.HonestRandom ? "колода задач не найдена" : "выключен в настройках");
+
+            if (!cfg.Tray) add(DiagLevel.Info, "Значок у часов", "выключен в настройках (Tray=False)");
+            else if (tray != null) add(DiagLevel.Ok, "Значок у часов", "создан. Не видно? Нажми стрелку ^ у часов и перетащи гуся на панель задач");
+            else add(DiagLevel.Fail, "Значок у часов", "не создан: " + (trayError ?? "причина в журнале"));
+
+            if (!cfg.Hotkeys) add(DiagLevel.Info, "Горячие клавиши", "выключены в настройках (Hotkeys=False)");
+            else
+            {
+                List<string> parts = new List<string>();
+                foreach (char k in HotkeyLetters)
+                {
+                    string st;
+                    parts.Add("Ctrl+Alt+" + k + ": " + (hotkeyState.TryGetValue(k, out st) ? st : (hotkeyError ?? "не зарегистрирована")));
+                }
+                string last = lastHotkeyAt > 0 ? ". Последнее нажатие: " + lastHotkey + ", " + Ago(now - lastHotkeyAt) : ". Нажатий пока не было";
+                add(poller != null ? DiagLevel.Ok : DiagLevel.Warn, "Горячие клавиши", string.Join("; ", parts) + (poller != null ? ". Запасной способ (опрос клавиатуры) включён" : "") + last);
+            }
+            add(DiagLevel.Ok, "Правый клик по гусю", "открывает меню" + (lastRightClickAt > 0 ? ", последний раз " + Ago(now - lastRightClickAt) : " — попробуй навести курсор на гуся и нажать правую кнопку"));
+
+            if (!cfg.PauseInFullscreen) add(DiagLevel.Info, "Игры и кино на весь экран", "не прятаться (выключено)");
+            else add(DiagLevel.Ok, "Игры и кино на весь экран", Deluxe.HiddenForFullscreen ? "сейчас что-то на весь экран — гусь спрятан" : "слежу: гусь спрячется, когда игра или видео будут на весь экран");
+
+            add(DiagLevel.Ok, "Время года", SeasonName(season) + " (дата " + SeasonClock.Now().ToString("dd.MM.yyyy") + ", настройка «" + cfg.Seasons + "»)" + (newYear ? ", новогодняя шапка" : ""));
+            if (autumn == null) add(DiagLevel.Info, "Осенние листья", "осенний мод автора гуся не найден (выключен или удалён) — листьев не будет");
+            else add(DiagLevel.Ok, "Осенние листья", season == Season.Autumn || season == Season.None
+                    ? "листья есть (куч сейчас: " + autumn.Count + ")" : "сейчас не осень — листья убираются (куч сейчас: " + autumn.Count + ")");
+            if (season == Season.Winter)
+                add(DiagLevel.Ok, "Зима", "снежинок " + winter.FlakeCount + ", сугробов " + winter.Drifts.Count + ", следов " + winter.PrintCount + ", снега у края " + winter.Bank.ToString("0") + " px");
+            else add(DiagLevel.Info, "Зима", "сейчас не зима — снега нет. Проверить: кнопка «Тест: сугроб» или «Всегда зима» в настройках");
+
+            FriendService f = Deluxe.Friends;
+            if (f == null) add(DiagLevel.Info, "Гусиная почта", cfg.Friends ? "не запустилась (причина в журнале)" : "выключена в настройках");
+            else if (f.Connected)
+                add(DiagLevel.Ok, "Гусиная почта", "связь с " + HostOf(f.Server) + " есть. Твой код " + GooseCode.Display(f.MyCode) + (f.HasFriend ? ", друг: " + f.FriendName : ", друг не добавлен"));
+            else add(DiagLevel.Warn, "Гусиная почта", "нет связи с " + HostOf(f.Server) + ", переподключаюсь. Может мешать интернет, провайдер, антивирус или прокси");
+            if (selfTestSentAt > 0)
+            {
+                if (selfTestBackAt >= selfTestSentAt) add(DiagLevel.Ok, "Тест связи", "записка сходила на сервер и вернулась за " + (selfTestBackAt - selfTestSentAt).ToString("0.0") + " с");
+                else if (now - selfTestSentAt > 20) add(DiagLevel.Warn, "Тест связи", "записка не вернулась за 20 с");
+                else add(DiagLevel.Info, "Тест связи", "жду, когда записка вернётся… (" + (now - selfTestSentAt).ToString("0") + " с)");
+            }
+
+            int ru = 0;
+            try
+            {
+                string notes = Path.Combine(Path.Combine(Path.Combine(Deluxe.GooseDir, "Assets"), "Text"), "NotepadMessages");
+                if (Directory.Exists(notes)) ru = Directory.GetFiles(notes, "ru-*.txt").Length;
+            }
+            catch { }
+            if (!cfg.RussianNotes) add(DiagLevel.Info, "Русские записки", "выключены");
+            else add(ru > 0 ? DiagLevel.Ok : DiagLevel.Warn, "Русские записки", ru > 0 ? ru + " записок в блокноте гуся" : "не нашёл папку с записками гуся");
+            add(DiagLevel.Info, "Гости", guests == null || guests.All.Count == 0 ? "сейчас никого" : guests.All.Count + " на экране");
+
+            string log = LogTail(400);
+            int problems = 0;
+            foreach (string line in log.Split('\n'))
+                if (line.Contains("failed") || line.Contains("Disabled") || line.Contains("Exception")) problems++;
+            add(problems == 0 ? DiagLevel.Ok : DiagLevel.Warn, "Журнал", (problems == 0 ? "ошибок нет" : "есть сообщения об ошибках: " + problems) + " — " + Path.Combine(Deluxe.ModDir, "GooseDeluxe.log"));
+            return list;
+        }
+
+        public string LogTail(int lines)
+        {
+            try
+            {
+                string path = Path.Combine(Deluxe.ModDir, "GooseDeluxe.log");
+                if (!File.Exists(path)) return "(журнал пуст)";
+                string text;
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (StreamReader r = new StreamReader(fs, System.Text.Encoding.UTF8))
+                    text = r.ReadToEnd();
+                string[] all = text.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
+                int from = Math.Max(0, all.Length - lines);
+                return string.Join("\n", all, from, all.Length - from);
+            }
+            catch (Exception ex) { return "(не удалось прочитать журнал: " + ex.Message + ")"; }
+        }
+
+        public void TestNote()
+        {
+            Wake();
+            DeliverTask.Pending = new DeliveryPayload { FromName = "пульта", Text = "Проверка: гусь умеет носить записки. Га!" };
+            if (!Deluxe.SetTask(DeliverTask.Id, false)) DeliverTask.Pending = null;
+        }
+
+        public void TestConnection(Action<string> report)
+        {
+            FriendService f = Deluxe.Friends;
+            if (f == null) { report("Гусиная почта выключена: включи её во вкладке «Настройки» и перезапусти гуся."); return; }
+            string host = HostOf(f.Server);
+            selfTestSentAt = clock.Elapsed.TotalSeconds;
+            selfTestBackAt = -1;
+            f.SendNote(f.MyCode, "Проверка связи: эта записка сходила на " + host + " и вернулась. Гусиная почта работает!", ok => report(ok
+                ? "Записка ушла на " + host + ". Если связь в порядке, через несколько секунд придёт гусь-гость с ней, а тут появится «Тест связи ✔»."
+                : "Не получилось отправить на " + host + ": сервер недоступен (интернет, провайдер или антивирус)."));
+        }
+
+        public void TestSnow()
+        {
+            Wake();
+            GooseEntity g = Deluxe.Goose;
+            Vector2 size = Deluxe.ScreenSize();
+            float dir = g.position.x < size.x / 2f ? 1f : -1f;
+            Vector2 at = new Vector2(M.Clamp(g.position.x + dir * 260f, 80f, size.x - 80f), M.Clamp(g.position.y, 100f, size.y - 60f));
+            SnowDrift d = winter.AddDrift(at, 44f * cfg.Scale, Time.time - 1f);
+            d.keepUntil = Time.time + 30f;
+            Deluxe.SetTask(ChaseSnowdriftTask.Id, false);
+        }
+
+        public void OpenModFolder()
+        {
+            Process.Start("explorer.exe", "\"" + Deluxe.ModDir + "\"");
+        }
+
         // ---------------------------------------------------------------- hotkeys & cleanup
 
         private void RegisterHotkeys()
         {
             overlay.HotkeyPressed += id =>
             {
-                if (id == WM_HOTKEY_COME) Guard("hotkey", Come);
-                else if (id == WM_HOTKEY_HONK) Guard("hotkey", HonkNow);
-                else if (id == WM_HOTKEY_PAUSE) Guard("hotkey", TogglePause);
+                char key = id == WM_HOTKEY_COME ? 'G' : id == WM_HOTKEY_HONK ? 'H' : id == WM_HOTKEY_PAUSE ? 'P' : 'M';
+                if (poller != null) poller.MarkFired(key);
+                OnHotkey(key, "WM_HOTKEY");
             };
             Register(WM_HOTKEY_COME, 'G');
             Register(WM_HOTKEY_HONK, 'H');
             Register(WM_HOTKEY_PAUSE, 'P');
+            Register(WM_HOTKEY_MENU, 'M');
         }
 
         private void Register(int id, char key)
         {
-            if (RegisterHotKey(overlay.Handle, id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, key)) hotkeys.Add(id);
-            else Deluxe.Log("Hotkey Ctrl+Alt+" + key + " is taken by another program (error " + Marshal.GetLastWin32Error() + ")");
+            if (RegisterHotKey(overlay.Handle, id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, key))
+            {
+                hotkeys.Add(id);
+                hotkeyState[key] = "зарегистрирована";
+            }
+            else
+            {
+                int err = Marshal.GetLastWin32Error();
+                hotkeyState[key] = "занята другой программой (ошибка " + err + "), работает запасной способ";
+                Deluxe.Log("Hotkey Ctrl+Alt+" + key + " is taken by another program (error " + err + "), polling instead");
+            }
+        }
+
+        private void OnHotkey(char key, string how)
+        {
+            lastHotkey = "Ctrl+Alt+" + key + " (" + how + ")";
+            lastHotkeyAt = clock.Elapsed.TotalSeconds;
+            switch (key)
+            {
+                case 'G': Guard("hotkey", Come); break;
+                case 'H': Guard("hotkey", HonkNow); break;
+                case 'P': Guard("hotkey", TogglePause); break;
+                case 'M': Guard("hotkey", () => ControlPanel.Open(this)); break;
+            }
         }
 
         private bool cleaned;

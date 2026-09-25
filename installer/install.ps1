@@ -212,9 +212,11 @@ try {
         $SearchRoots = @($GooseHome, $DesktopPath, $Downloads, $Documents, $ScriptDir, (Split-Path -Parent $ScriptDir), $env:USERPROFILE)
     }
     $exes = @()
+    $allCopies = @()
     foreach ($root in $SearchRoots) {
-        $exes = @(Find-Files @($root) 'GooseDesktop.exe' 5)
-        if ($exes.Count -gt 0) { break }
+        $found = @(Find-Files @($root) 'GooseDesktop.exe' 5)
+        $allCopies += $found
+        if ($exes.Count -eq 0 -and $found.Count -gt 0) { $exes = $found }
     }
     if ($exes.Count -eq 0) {
         $drives = @()
@@ -307,6 +309,27 @@ try {
     Enable-Mods $gooseDir
     Log ("mod installed to " + $modDir)
 
+    # check that the new DLL really landed (a running or locked goose could keep the old one)
+    $installedDll = Join-Path $modDir 'GooseDeluxe.dll'
+    $want = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+    $have = (Get-FileHash -LiteralPath $installedDll -Algorithm SHA256).Hash
+    if ($want -ne $have) {
+        ShowError ("Мод скопировался не полностью: в папке гуся осталась старая версия.`n`n" + $installedDll + "`n`nЗакрой гуся (подержи ESC или через меню «Выгнать гуся») и запусти установку ещё раз.")
+        exit 1
+    }
+    $version = (Get-Item -LiteralPath $installedDll).VersionInfo.FileVersion
+    if (-not $version) { $version = '?' }
+    Log ("verified GooseDeluxe " + $version + " sha256 " + $have)
+    $cfgText = [IO.File]::ReadAllText((Join-Path $gooseDir 'config.ini'))
+    if ($cfgText -notmatch '(?m)^EnableMods=True') {
+        ShowError "Не получилось включить моды в config.ini гуся. Открой его Блокнотом и поставь EnableMods=True."
+        exit 1
+    }
+
+    # other copies of the goose on this PC don't have the new mod: say so
+    $others = @($allCopies | ForEach-Object { $_.DirectoryName } | Where-Object { $_ -and ($_ -ne $gooseDir) -and (Test-Path -LiteralPath (Join-Path $_ 'GooseDesktop.exe')) } | Sort-Object -Unique)
+    foreach ($o in $others) { Log ("another goose copy: " + $o) }
+
     # 6. desktop shortcut
     $shortcut = Join-Path $DesktopPath ($GooseFolderName + '.lnk')
     $shortcutOk = $false
@@ -323,9 +346,12 @@ try {
     } catch { Log ("shortcut failed: " + $_.Exception.Message) }
 
     # 7. done
-    $summary = "Готово! Гусь лежит здесь:`n" + $gooseDir + "`n`nМод установлен, моды в config.ini включены"
+    $summary = "Готово! Установлен GooseDeluxe " + $version + ".`n`nГусь лежит здесь:`n" + $gooseDir + "`n`nМод проверен, моды в config.ini включены"
     if ($shortcutOk) { $summary += ", ярлык «" + $GooseFolderName + "» на рабочем столе создан" }
-    $summary += ".`n`nПри запуске гусь спросит про моды — нажми «Да» (Yes)."
+    $summary += ".`n`nПри запуске гусь спросит про моды (окно «Mod Enabler Warning») — нажми «Да» (Yes).`nПотом нажми на гуся правой кнопкой мыши — там меню и пульт."
+    if ($others.Count -gt 0) {
+        $summary += "`n`nВНИМАНИЕ: на компьютере есть ещё копии гуся, в них нового мода нет:`n" + ($others -join "`n") + "`nЗапускай гуся через ярлык «" + $GooseFolderName + "» на рабочем столе."
+    }
     if (-not $NoLaunch -and (Ask ($summary + "`n`nЗапустить гуся сейчас?"))) {
         Start-Process -FilePath (Join-Path $gooseDir 'GooseDesktop.exe') -WorkingDirectory $gooseDir
     } else {

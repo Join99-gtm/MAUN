@@ -21,11 +21,11 @@ namespace GooseDeluxe
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = true;
             Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(400, 262);
+            ClientSize = new Size(400, 272);
 
             Label hint = new Label
             {
-                Text = "Гусь унесёт записку за край экрана, а у " + friendName + " из-за края выйдет твой гусь с ней в клюве.",
+                Text = "Гусь унесёт записку за край экрана, а у друга «" + friendName + "» из-за края выйдет твой гусь с ней в клюве.",
                 Location = new Point(12, 10),
                 Size = new Size(376, 36),
             };
@@ -42,11 +42,11 @@ namespace GooseDeluxe
             {
                 Text = "Записки идут через открытый сервер ntfy.sh — пароли и секреты не пиши.",
                 ForeColor = Color.DimGray,
-                Location = new Point(12, 194),
-                Size = new Size(376, 20),
+                Location = new Point(12, 192),
+                Size = new Size(376, 34),
             };
-            Button ok = new Button { Text = "Отправить", Location = new Point(212, 222), Size = new Size(84, 30) };
-            Button cancel = new Button { Text = "Отмена", DialogResult = DialogResult.Cancel, Location = new Point(304, 222), Size = new Size(84, 30) };
+            Button ok = new Button { Text = "Отправить", Location = new Point(212, 232), Size = new Size(84, 30) };
+            Button cancel = new Button { Text = "Отмена", DialogResult = DialogResult.Cancel, Location = new Point(304, 232), Size = new Size(84, 30) };
             ok.Click += (s, e) =>
             {
                 if (NoteText.Length == 0) { box.Focus(); return; }
@@ -80,13 +80,14 @@ namespace GooseDeluxe
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = true;
             Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(420, 268);
+            ClientSize = new Size(420, 290);
 
             int y = 12;
             Func<string, Label> label = t =>
             {
-                Label l = new Label { Text = t, Location = new Point(12, y), Size = new Size(396, 20) };
-                y += 22;
+                int h = t.Length > 50 ? 38 : 20;
+                Label l = new Label { Text = t, Location = new Point(12, y), Size = new Size(396, h) };
+                y += h + 2;
                 return l;
             };
             Func<string, TextBox> field = v =>
@@ -109,8 +110,8 @@ namespace GooseDeluxe
                 Location = new Point(12, y),
                 Size = new Size(396, 20),
             };
-            Button ok = new Button { Text = "Сохранить", Location = new Point(232, 230), Size = new Size(84, 30) };
-            Button cancel = new Button { Text = "Отмена", DialogResult = DialogResult.Cancel, Location = new Point(324, 230), Size = new Size(84, 30) };
+            Button ok = new Button { Text = "Сохранить", Location = new Point(232, 252), Size = new Size(84, 30) };
+            Button cancel = new Button { Text = "Отмена", DialogResult = DialogResult.Cancel, Location = new Point(324, 252), Size = new Size(84, 30) };
             ok.Click += (s, e) =>
             {
                 if (Code == null)
