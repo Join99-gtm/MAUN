@@ -14,7 +14,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $LogPath = Join-Path $ScriptDir 'install-log.txt'
@@ -102,21 +101,26 @@ function Test-Under([string]$path, [string]$root) {
 
 function Extract-Rar([string]$rar, [string]$dest) {
     New-Item -ItemType Directory -Path $dest -Force | Out-Null
+    # Every tool runs with the destination as its working directory and gets the archive as a single
+    # quoted argument: Start-Process joins -ArgumentList arrays with bare spaces, which breaks paths
+    # like "...\Telegram Desktop\..." or "...\Рабочий стол\...".
+    $quotedRar = '"' + $rar + '"'
     $tools = @()
     foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
         if (-not $pf) { continue }
-        $tools += @{ Name = '7-Zip';  Exe = (Join-Path $pf '7-Zip\7z.exe');     Args = @('x', '-y', ('-o' + $dest), $rar) }
-        $tools += @{ Name = 'WinRAR'; Exe = (Join-Path $pf 'WinRAR\WinRAR.exe'); Args = @('x', '-y', '-ibck', $rar, ($dest + '\')) }
-        $tools += @{ Name = 'UnRAR';  Exe = (Join-Path $pf 'WinRAR\UnRAR.exe');  Args = @('x', '-y', $rar, ($dest + '\')) }
+        $tools += @{ Name = '7-Zip';  Exe = (Join-Path $pf '7-Zip\7z.exe');      Args = ('x -y ' + $quotedRar) }
+        $tools += @{ Name = 'WinRAR'; Exe = (Join-Path $pf 'WinRAR\WinRAR.exe'); Args = ('x -y -ibck ' + $quotedRar) }
+        $tools += @{ Name = 'UnRAR';  Exe = (Join-Path $pf 'WinRAR\UnRAR.exe');  Args = ('x -y ' + $quotedRar) }
     }
+    # Windows 11 ships a libarchive-based tar.exe that reads RAR5; older ones fail harmlessly.
     $tar = Get-Command tar -ErrorAction SilentlyContinue
-    if ($tar) { $tools += @{ Name = 'tar'; Exe = $tar.Source; Args = @('-xf', $rar, '-C', $dest) } }
+    if ($tar) { $tools += @{ Name = 'tar'; Exe = $tar.Source; Args = ('-xf ' + $quotedRar) } }
 
     foreach ($t in $tools) {
         if (-not (Test-Path -LiteralPath $t.Exe)) { continue }
         Log ("extracting with " + $t.Name + ": " + $t.Exe)
         try {
-            $p = Start-Process -FilePath $t.Exe -ArgumentList $t.Args -Wait -PassThru -NoNewWindow -ErrorAction Stop
+            $p = Start-Process -FilePath $t.Exe -ArgumentList $t.Args -WorkingDirectory $dest -Wait -PassThru -NoNewWindow -ErrorAction Stop
             Log ("  exit code " + $p.ExitCode)
         } catch { Log ("  failed: " + $_.Exception.Message); continue }
         $exe = @(Find-Files @($dest) 'GooseDesktop.exe' 6)
@@ -127,10 +131,19 @@ function Extract-Rar([string]$rar, [string]$dest) {
 
 function Move-Contents([string]$from, [string]$to) {
     New-Item -ItemType Directory -Path $to -Force | Out-Null
+    $sameDrive = [string]::Equals([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($from)),
+                                  [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($to)),
+                                  [StringComparison]::OrdinalIgnoreCase)
     foreach ($item in Get-ChildItem -LiteralPath $from -Force) {
         $target = Join-Path $to $item.Name
         if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-        Move-Item -LiteralPath $item.FullName -Destination $to -Force
+        if ($sameDrive) {
+            Move-Item -LiteralPath $item.FullName -Destination $to -Force
+        } else {
+            # Move-Item refuses to move folders between drives (D:\ -> C:\)
+            Copy-Item -LiteralPath $item.FullName -Destination $to -Recurse -Force
+            Remove-Item -LiteralPath $item.FullName -Recurse -Force
+        }
     }
 }
 
