@@ -42,6 +42,10 @@ namespace GooseDeluxe
         private Tray tray;
         private WinterScene winter;
         private AutumnControl autumn;
+        private bool leafClicksBroken;
+        private int leafClicks;
+        private readonly GooseForms forms = new GooseForms();
+        private static readonly Brush LeafHitBrush = new SolidBrush(Color.FromArgb(1, 0, 0, 0));
         private Season season = Season.None;
         private bool newYear;
         private double nextSnowdriftRun = -1;
@@ -88,6 +92,7 @@ namespace GooseDeluxe
             catch (Exception ex) { cfg = new DeluxeConfig(); Deluxe.Log("Config load failed, using defaults: " + ex.Message); }
             Deluxe.Cfg = cfg;
             Deluxe.Log("GooseDeluxe " + Version + " starting");
+            Deluxe.Status("started", "pid " + Process.GetCurrentProcess().Id + ", " + Deluxe.GooseDir);
 
             particles = new ParticleSystem();
             animator = new GooseAnimator(cfg, particles);
@@ -167,6 +172,7 @@ namespace GooseDeluxe
                 poller = new HotkeyPoller(vk => (GetAsyncKeyState(vk) & 0x8001) != 0, () => clock.Elapsed.TotalSeconds);
             }
             overlay.GooseRightClicked += () => Guard("right click", ShowGooseMenu);
+            overlay.LeftClicked += p => Guard("left click", () => OnLeftClick(p));
             Guard("what's new", ShowWhatsNewOnce);
             if (cfg.Friends)
             {
@@ -181,9 +187,11 @@ namespace GooseDeluxe
             }
             Application.ApplicationExit += (s, e) => Cleanup();
             hooked = true;
-            Deluxe.Log("Hooked. engine=" + Engine.Available + " settings=" + GooseSettings.Available + " deck=" + (deckFixer != null) +
-                       " season=" + season + " autumnMod=" + (autumn != null) +
-                       " friends=" + (Deluxe.Friends != null ? GooseCode.Display(Deluxe.Friends.MyCode) : "off"));
+            string summary = "engine=" + Engine.Available + " settings=" + GooseSettings.Available + " deck=" + (deckFixer != null) +
+                             " season=" + season + " autumnMod=" + (autumn != null) + " tray=" + (tray != null) +
+                             " friends=" + (Deluxe.Friends != null ? GooseCode.Display(Deluxe.Friends.MyCode) : "off");
+            Deluxe.Log("Hooked. " + summary);
+            Deluxe.Status("hooked", summary);
         }
 
         // ---------------------------------------------------------------- goose frame
@@ -220,7 +228,13 @@ namespace GooseDeluxe
 
         private void OnPostTick(GooseEntity goose)
         {
-            if (hooked && !failed) SuppressLeaves();
+            if (hooked && !failed)
+            {
+                SuppressLeaves();
+                // a meme / Not-epad the goose has just made (it shows it later): next one from the no-repeat deck
+                try { forms.Update(goose.currentTaskData, cfg, Deluxe.GooseDir); }
+                catch (Exception ex) { Deluxe.Log("meme/note swap failed: " + ex.Message); }
+            }
             if (!hooked || failed || guests == null) return;
             try { guests.Update(timestep != null ? timestep.LastSteps : 1); }
             catch (Exception ex) { Deluxe.Log("Visitors removed after an error: " + ex); guests.Clear(); }
@@ -258,6 +272,7 @@ namespace GooseDeluxe
                 if (!Deluxe.HiddenForFullscreen)
                 {
                     renderer.Prepare(g);
+                    if (LeafClicksOn) DrawLeafHitAreas(g);
                     List<KeyValuePair<float, Action>> draws = new List<KeyValuePair<float, Action>>();
                     Vector2 screen = Deluxe.ScreenSize();
                     bool scarf = cfg.WinterScarf && season == Season.Winter;
@@ -312,6 +327,7 @@ namespace GooseDeluxe
         {
             failed = true;
             Deluxe.Log("Disabled after an error, the goose is back to its own drawing: " + ex);
+            Deluxe.Status("failed", ex.GetType().Name + ": " + ex.Message);
             try
             {
                 if (originalRender != null) goose.render = originalRender;
@@ -450,30 +466,71 @@ namespace GooseDeluxe
             {
                 FromName = "гуся",
                 Text = "Привет! Я обновился: GooseDeluxe " + Version + ".\n\n" +
-                       "Нажми на меня ПРАВОЙ кнопкой мыши — там меню и пульт с настройками. Или Ctrl+Alt+M.\n\n" +
+                       "Нажми на меня ПРАВОЙ кнопкой мыши — там меню и пульт с настройками. Или Ctrl+Alt+M.\n" +
+                       "Левой кнопкой — я гудну. Кучи листьев разлетаются от клика.\n\n" +
                        "Во вкладке «Проверка» видно, что у меня работает. Га!",
             };
             if (!Deluxe.SetTask(DeliverTask.Id, false)) DeliverTask.Pending = null;
         }
 
-        /// <summary>The overlay catches mouse clicks only while the cursor is on the goose (for the right-click menu).</summary>
+        /// <summary>
+        /// The overlay catches mouse clicks only while the cursor is on the goose (right click: menu, left: honk)
+        /// or on a leaf pile (left click kicks it). Everywhere else clicks go through to the desktop.
+        /// </summary>
         private void UpdateClickable()
         {
             if (overlay == null) return;
             bool near = false;
-            if (!Deluxe.HiddenForFullscreen && animator.HasPose)
+            Point cur = Cursor.Position;
+            Rectangle b = MainWindowBounds();
+            Vector2 at = new Vector2(cur.X - b.X, cur.Y - b.Y);
+            if (!Deluxe.HiddenForFullscreen && animator.HasPose) near = GooseHit.IsOnGoose(animator.Pose, at);
+            if (!near && LeafClicksOn)
             {
-                GoosePose p = animator.Pose;
-                Point cur = Cursor.Position;
-                Rectangle b = MainWindowBounds();
-                near = GooseHit.IsOnGoose(p, new Vector2(cur.X - b.X, cur.Y - b.Y));
+                try { near = autumn.PileAt(at) >= 0; }
+                catch (Exception ex) { leafClicksBroken = true; Deluxe.Log("leaf clicks disabled: " + ex.Message); }
             }
             overlay.SetClickable(near);
+        }
+
+        private bool LeafClicksOn
+        {
+            get { return cfg.ClickLeafPiles && autumn != null && !leafClicksBroken && autumn.CanKick && !Deluxe.HiddenForFullscreen && !Deluxe.Sleeping; }
+        }
+
+        /// <summary>
+        /// The piles are drawn by the goose's own window, under ours, where our overlay is fully transparent and
+        /// so lets every click through. A barely-there fill (alpha 1 of 255) over each pile makes ours catch it.
+        /// </summary>
+        private void DrawLeafHitAreas(Graphics g)
+        {
+            List<AutumnControl.Pile> piles;
+            try { piles = autumn.Piles(); }
+            catch (Exception ex) { leafClicksBroken = true; Deluxe.Log("leaf clicks disabled: " + ex.Message); return; }
+            foreach (AutumnControl.Pile p in piles)
+            {
+                if (p.Kicked) continue;
+                float cx, cy, rx, ry;
+                LeafHit.Area(p.Pos, p.Rad, out cx, out cy, out rx, out ry);
+                g.FillEllipse(LeafHitBrush, cx - rx, cy - ry, rx * 2f, ry * 2f);
+            }
+        }
+
+        private void OnLeftClick(Point client)
+        {
+            Vector2 at = new Vector2(client.X, client.Y);
+            if (LeafClicksOn && autumn.KickAt(at, Time.time))
+            {
+                leafClicks++;
+                return;
+            }
+            if (animator.HasPose && GooseHit.IsOnGoose(animator.Pose, at)) HonkNow();
         }
 
         private void ShowGooseMenu()
         {
             lastRightClickAt = clock.Elapsed.TotalSeconds;
+            Deluxe.Log("right click on the goose at " + Cursor.Position);
             if (tray != null) tray.ShowMenuAt(Cursor.Position);
             else ControlPanel.Open(this);
         }
@@ -883,6 +940,12 @@ namespace GooseDeluxe
             if (autumn == null) add(DiagLevel.Info, "Осенние листья", "осенний мод автора гуся не найден (выключен или удалён) — листьев не будет");
             else add(DiagLevel.Ok, "Осенние листья", season == Season.Autumn || season == Season.None
                     ? "листья есть (куч сейчас: " + autumn.Count + ")" : "сейчас не осень — листья убираются (куч сейчас: " + autumn.Count + ")");
+            if (autumn != null)
+            {
+                if (!cfg.ClickLeafPiles) add(DiagLevel.Info, "Кучи листьев кликом", "выключено в настройках");
+                else if (!autumn.CanKick || leafClicksBroken) add(DiagLevel.Warn, "Кучи листьев кликом", "не работает с этой версией осеннего мода");
+                else add(DiagLevel.Ok, "Кучи листьев кликом", "нажми на кучу — листья разлетятся" + (leafClicks > 0 ? ". Разбросано куч: " + leafClicks : ""));
+            }
             if (season == Season.Winter)
                 add(DiagLevel.Ok, "Зима", "снежинок " + winter.FlakeCount + ", сугробов " + winter.Drifts.Count + ", следов " + winter.PrintCount + ", снега у края " + winter.Bank.ToString("0") + " px");
             else add(DiagLevel.Info, "Зима", "сейчас не зима — снега нет. Проверить: кнопка «Тест: сугроб» или «Всегда зима» в настройках");
@@ -908,6 +971,10 @@ namespace GooseDeluxe
             catch { }
             if (!cfg.RussianNotes) add(DiagLevel.Info, "Русские записки", "выключены");
             else add(ru > 0 ? DiagLevel.Ok : DiagLevel.Warn, "Русские записки", ru > 0 ? ru + " записок в блокноте гуся" : "не нашёл папку с записками гуся");
+            if (!cfg.NoRepeats) add(DiagLevel.Info, "Мемы и записки без повторов", "выключено в настройках");
+            else add(DiagLevel.Ok, "Мемы и записки без повторов", "по кругу, без повторов подряд. Принесено мемов: " + forms.MemesShown + ", записок: " + forms.NotesShown +
+                     (forms.LastMeme != null ? ". Последний мем: " + Path.GetFileName(forms.LastMeme) : "") +
+                     ". Свои картинки можно положить в " + Path.Combine(Path.Combine(Path.Combine(Deluxe.GooseDir ?? "", "Assets"), "Images"), "Memes"));
             add(DiagLevel.Info, "Гости", guests == null || guests.All.Count == 0 ? "сейчас никого" : guests.All.Count + " на экране");
 
             string log = LogTail(400);

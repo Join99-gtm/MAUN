@@ -37,6 +37,7 @@ namespace Tests
             Run("Seasons: winter scene", TestWinter);
             Run("Task: run through a snowdrift", TestSnowdriftRun);
             Run("Пульт: горячие клавиши, клик по гусю, сохранение, отчёт", TestPanelLogic);
+            Run("Мемы и записки без повторов, клик по куче листьев", TestNoRepeatsAndLeafHit);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
             else Console.WriteLine("(skipping Autumn mod test: pass the goose folder as the 2nd argument)");
@@ -89,7 +90,8 @@ namespace Tests
         {
             // the bug, reproduced with the goose's own SamEngine.Deck
             Dictionary<string, int> original = Orders(Draw(new Deck(3), null, 30000), 3);
-            Check("original Deck(3): only " + original.Count + " of 6 orders ever happen", original.Count == 2, string.Join(" ", original.Keys));
+            int originalReal = original.Values.Count(v => v > 100); // see Deck(4) below about float rounding
+            Check("original Deck(3): only " + originalReal + " of 6 orders ever happen", originalReal == 2, string.Join(" ", original.Select(kv => kv.Key + "=" + kv.Value)));
 
             Deck deck = new Deck(3);
             DeckFixer fixer = new DeckFixer(() => deck, new Random(1234));
@@ -109,7 +111,11 @@ namespace Tests
             DeckFixer fixer4 = new DeckFixer(() => deck4, new Random(99));
             Dictionary<string, int> o4 = Orders(Draw(deck4, fixer4, 4 * 20000), 4);
             Dictionary<string, int> o4orig = Orders(Draw(new Deck(4), null, 4 * 20000), 4);
-            Check("Deck(4): original " + o4orig.Count + "/24 orders, fixed " + o4.Count + "/24", o4orig.Count == 6 && o4.Count == 24);
+            // SamMath.RandomRange works in float: once in ~25 million draws (int)(x*i) rounds up to i, a card swaps
+            // with itself and a non-cyclic order slips in. Count the orders that really happen (>1% of decks).
+            int o4origReal = o4orig.Values.Count(v => v > 200);
+            Check("Deck(4): original " + o4origReal + "/24 orders, fixed " + o4.Count + "/24", o4origReal == 6 && o4.Count == 24,
+                  "all seen: " + o4orig.Count);
         }
 
         // ------------------------------------------------------------------ timestep
@@ -523,6 +529,68 @@ namespace Tests
             piles.Add(Activator.CreateInstance(leafPile));
             Check("two leaf piles as the Autumn mod would make them", ctl.Count == 2);
             Check("outside autumn they are removed", ctl.Suppress() == 2 && piles.Count == 0);
+
+            // клик по куче: настоящая куча осеннего мода, настоящий LeafPile.Kick
+            Check("куча осеннего мода узнаётся (поля pos/rad/timeSinceKicked и Kick)", ctl.CanKick);
+            object pile = Activator.CreateInstance(leafPile);
+            leafPile.GetMethod("Init").Invoke(pile, new object[] { new Vector2(400f, 300f), 40f, 40f });
+            piles.Add(pile);
+            Check("клик мимо кучи ничего не делает", ctl.PileAt(new Vector2(520f, 300f)) < 0 && !ctl.KickAt(new Vector2(520f, 300f), 30f));
+            Check("клик по верхушке кучи попадает в неё", ctl.PileAt(new Vector2(400f, 262f)) == 0);
+            float now = 30f;
+            Check("клик по куче её разбрасывает", ctl.KickAt(new Vector2(405f, 295f), now));
+            float kickedAt = (float)leafPile.GetField("timeSinceKicked").GetValue(pile);
+            Check("куча исчезнет через несколько секунд, а не через 10", Math.Abs(kickedAt - (now - (8f - AutumnControl.SecondsLeftAfterClick))) < 0.01f, kickedAt.ToString("0.00"));
+            Array leaves = (Array)leafPile.GetField("leaves").GetValue(pile);
+            int flying = 0;
+            foreach (object leaf in leaves)
+                if ((float)leaf.GetType().GetField("velZ").GetValue(leaf) > 0f) flying++;
+            Check("листья взлетели", flying > leaves.Length / 2, flying + " из " + leaves.Length);
+            Check("разбросанную кучу второй раз не кликнуть", ctl.PileAt(new Vector2(400f, 290f)) < 0 && !ctl.KickAt(new Vector2(400f, 290f), now));
+            List<AutumnControl.Pile> list = ctl.Piles();
+            Check("список куч видит разбросанную кучу", list.Count == 1 && list[0].Kicked && Math.Abs(list[0].Rad - 40f) < 0.01f);
+            piles.Clear();
+        }
+
+        private static void TestNoRepeatsAndLeafHit()
+        {
+            NoRepeatDeck deck = new NoRepeatDeck(new Random(7));
+            List<string> memes = new List<string> { "GooseDance.gif", "Meme1.png", "Meme2.png", "Meme3.png", "Meme4.png", "Meme5.png", "Meme6.png", "Meme7.png" };
+            bool eachOnce = true, noDouble = true;
+            string prev = null;
+            for (int round = 0; round < 200; round++)
+            {
+                HashSet<string> seen = new HashSet<string>();
+                for (int i = 0; i < memes.Count; i++)
+                {
+                    string m = deck.Next(memes);
+                    if (!seen.Add(m)) eachOnce = false;
+                    if (m == prev) noDouble = false;
+                    prev = m;
+                }
+            }
+            Check("каждый круг — все 8 мемов по разу", eachOnce);
+            Check("один и тот же мем два раза подряд не приходит (1600 мемов)", noDouble);
+            memes.Add("мой мем.jpg");
+            bool newSeen = false;
+            for (int i = 0; i < memes.Count; i++) if (deck.Next(memes) == "мой мем.jpg") newSeen = true;
+            Check("новая картинка в папке попадает в следующий круг", newSeen);
+            Check("пустая папка — ничего", deck.Next(new List<string>()) == null);
+            NoRepeatDeck one = new NoRepeatDeck();
+            List<string> single = new List<string> { "a.png" };
+            Check("один мем — просто он", one.Next(single) == "a.png" && one.Next(single) == "a.png");
+            NoRepeatDeck two = new NoRepeatDeck(new Random(1));
+            List<string> pair = new List<string> { "a", "b" };
+            string last = null; bool alternates = true;
+            for (int i = 0; i < 50; i++) { string x = two.Next(pair); if (x == last) alternates = false; last = x; }
+            Check("два мема чередуются", alternates);
+
+            // зона клика по куче: куча 40 px вокруг (400, 300), листья лежат до ~48 px выше
+            Vector2 pos = new Vector2(400f, 300f);
+            Check("центр кучи — попадание", LeafHit.IsOnPile(pos, 40f, new Vector2(400f, 290f)));
+            Check("верх кучи (листья насыпаны выше центра) — попадание", LeafHit.IsOnPile(pos, 40f, new Vector2(400f, 258f)));
+            Check("край тени — попадание", LeafHit.IsOnPile(pos, 40f, new Vector2(440f, 290f)) && LeafHit.IsOnPile(pos, 40f, new Vector2(400f, 322f)));
+            Check("рядом с кучей — мимо", !LeafHit.IsOnPile(pos, 40f, new Vector2(460f, 300f)) && !LeafHit.IsOnPile(pos, 40f, new Vector2(400f, 350f)) && !LeafHit.IsOnPile(pos, 40f, new Vector2(400f, 220f)));
         }
 
         // ------------------------------------------------------------------ control panel logic

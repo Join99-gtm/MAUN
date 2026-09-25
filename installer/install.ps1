@@ -1,6 +1,7 @@
 ﻿# GooseDeluxe installer.
-# Finds Desktop Goose on this PC (or unpacks its .rar), moves it into a "Гусь" folder on the
-# Desktop, installs the mod, enables mods in config.ini and creates a Desktop shortcut.
+# Finds every Desktop Goose on this PC (or unpacks its .rar), installs the mod into all of them, enables
+# mods in config.ini, makes a Desktop shortcut, then starts the goose and waits until the mod reports that
+# it is running (GooseDeluxe.status). If it doesn't, it says why and copies a report to the clipboard.
 # Runs on Windows PowerShell 5.1 (the one every Windows 10/11 has). No admin rights needed.
 #
 # Parameters exist only so the logic can be tested outside Windows; a user never passes them.
@@ -10,15 +11,18 @@ param(
     [string]$PayloadDir = "",
     [switch]$NoGui,
     [switch]$AutoYes,
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+    [int]$WaitSeconds = 150
 )
 
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $LogPath = Join-Path $ScriptDir 'install-log.txt'
+$ReportPath = Join-Path $ScriptDir 'install-report.txt'
 $GooseFolderName = 'Гусь'
 $ModName = 'GooseDeluxe'
+$script:Report = New-Object System.Collections.Generic.List[string]
 
 function Log([string]$msg) {
     $line = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $msg
@@ -26,9 +30,15 @@ function Log([string]$msg) {
     try { Add-Content -Path $LogPath -Value $line -Encoding UTF8 } catch { }
 }
 
+function Note([string]$msg) {
+    # goes into the report the user can paste to us, and into the log
+    $script:Report.Add($msg)
+    Log ('report: ' + $msg)
+}
+
 $script:GuiOk = $false
 if (-not $NoGui) {
-    try { Add-Type -AssemblyName System.Windows.Forms; $script:GuiOk = $true } catch { $script:GuiOk = $false }
+    try { Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $script:GuiOk = $true } catch { $script:GuiOk = $false }
 }
 
 function Show([string]$text, [string]$title = 'GooseDeluxe') {
@@ -97,6 +107,10 @@ function Test-Under([string]$path, [string]$root) {
     $p = [IO.Path]::GetFullPath($path).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $r = [IO.Path]::GetFullPath($root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     return $p.StartsWith($r, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Same-Dir([string]$a, [string]$b) {
+    return [string]::Equals([IO.Path]::GetFullPath($a).TrimEnd('\', '/'), [IO.Path]::GetFullPath($b).TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Extract-Rar([string]$rar, [string]$dest) {
@@ -183,7 +197,201 @@ function Enable-Mods([string]$gooseDir) {
     }
     # The goose's own parser needs plain key=value lines and no BOM.
     [IO.File]::WriteAllText($cfg, $text, [System.Text.Encoding]::ASCII)
-    Log 'EnableMods=True set in config.ini'
+}
+
+# ------------------------------------------------------------------ where the goose is
+
+function Get-RunningGeese {
+    $list = @()
+    foreach ($p in @(Get-Process -Name GooseDesktop -ErrorAction SilentlyContinue)) {
+        $path = $null
+        try { $path = $p.Path } catch { }
+        $list += [pscustomobject]@{ Process = $p; Path = $path }
+    }
+    return $list
+}
+
+function Get-ShortcutTargets {
+    # the goose the user actually starts may be behind a shortcut on the Desktop, in Start or on the taskbar
+    $targets = @()
+    $dirs = @($DesktopPath, (Get-KnownFolder 'CommonDesktopDirectory' ''), (Get-KnownFolder 'StartMenu' ''), (Get-KnownFolder 'CommonStartMenu' ''),
+              [IO.Path]::Combine([string]$env:APPDATA, 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'))
+    $shell = $null
+    try { $shell = New-Object -ComObject WScript.Shell } catch { return $targets }
+    foreach ($d in $dirs) {
+        if (-not $d -or -not (Test-Path -LiteralPath $d)) { continue }
+        foreach ($lnk in @(Get-ChildItem -LiteralPath $d -Filter '*.lnk' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)) {
+            try {
+                $t = $shell.CreateShortcut($lnk.FullName).TargetPath
+                if ($t -and $t -like '*GooseDesktop.exe' -and (Test-Path -LiteralPath $t)) {
+                    Log ("shortcut " + $lnk.FullName + " -> " + $t)
+                    $targets += $t
+                }
+            } catch { }
+        }
+    }
+    return $targets
+}
+
+# ------------------------------------------------------------------ install
+
+function Install-Into([string]$gooseDir, [string]$dll, [string]$ini) {
+    $modDir = [IO.Path]::Combine($gooseDir, 'Assets', 'Mods', $ModName)
+    New-Item -ItemType Directory -Path $modDir -Force | Out-Null
+    $target = Join-Path $modDir 'GooseDeluxe.dll'
+    if (-not (Same-Dir (Split-Path -Parent $dll) $modDir)) {
+        Copy-Item -LiteralPath $dll -Destination $target -Force
+        if (-not (Test-Path -LiteralPath (Join-Path $modDir 'GooseDeluxe.ini'))) {
+            Copy-Item -LiteralPath $ini -Destination (Join-Path $modDir 'GooseDeluxe.ini') -Force
+        }
+    }
+    # a downloaded zip marks its files as "from the internet"; the goose loads mods anyway, but clear it
+    try { Unblock-File -LiteralPath $target -ErrorAction Stop } catch { }
+    # the goose loads every DLL in a mod folder; a stray copy of the API there breaks the mod
+    $strayApi = Join-Path $modDir 'GooseModdingAPI.dll'
+    if (Test-Path -LiteralPath $strayApi) { Remove-Item -LiteralPath $strayApi -Force }
+    Enable-Mods $gooseDir
+    return $modDir
+}
+
+function Test-Installed([string]$modDir, [string]$wantHash) {
+    $f = Join-Path $modDir 'GooseDeluxe.dll'
+    if (-not (Test-Path -LiteralPath $f)) { return 'missing' }
+    try { $h = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash } catch { return ('unreadable: ' + $_.Exception.Message) }
+    if ($h -ne $wantHash) { return 'old' }
+    return 'ok'
+}
+
+# ------------------------------------------------------------------ diagnostics
+
+function Get-AntivirusNames {
+    try {
+        $names = @(Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName AntiVirusProduct -ErrorAction Stop | ForEach-Object { $_.displayName })
+        return ($names | Where-Object { $_ } | Sort-Object -Unique)
+    } catch { return @() }
+}
+
+function Get-SystemInfo {
+    $os = [Environment]::OSVersion.VersionString
+    try { $os = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Caption + ' ' + $os } catch { }
+    $net = '?'
+    try { $net = [string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction Stop).Release } catch { }
+    return ($os + '; PowerShell ' + $PSVersionTable.PSVersion + '; .NET release ' + $net)
+}
+
+function Read-Status([string]$modDir) {
+    $f = Join-Path $modDir 'GooseDeluxe.status'
+    if (-not (Test-Path -LiteralPath $f)) { return $null }
+    try { $line = [IO.File]::ReadAllText($f).Trim() } catch { return $null }
+    $parts = $line.Split('|')
+    if ($parts.Count -lt 3) { return $null }
+    return @{ State = $parts[0]; Time = $parts[1]; Version = $parts[2]; Detail = $(if ($parts.Count -gt 3) { $parts[3] } else { '' }); Line = $line }
+}
+
+function Get-LogTail([string]$modDir, [int]$lines) {
+    $f = Join-Path $modDir 'GooseDeluxe.log'
+    if (-not (Test-Path -LiteralPath $f)) { return @('(журнала мода нет — мод ни разу не запускался в этой папке)') }
+    try { return @(Get-Content -LiteralPath $f -Encoding UTF8 -Tail $lines) } catch { return @('(журнал не читается: ' + $_.Exception.Message + ')') }
+}
+
+function Copy-Report {
+    $text = ($script:Report -join "`r`n")
+    try { [IO.File]::WriteAllText($ReportPath, $text, (New-Object System.Text.UTF8Encoding($true))) } catch { }
+    try { Set-Clipboard -Value $text -ErrorAction Stop; return $true } catch { }
+    try { if ($script:GuiOk) { [System.Windows.Forms.Clipboard]::SetText($text); return $true } } catch { }
+    return $false
+}
+
+# ------------------------------------------------------------------ start the goose and wait for the mod
+
+function Step-Wait($st) {
+    $s = Read-Status $st.ModDir
+    if ($s) {
+        $st.Status = $s
+        if ($s.State -eq 'hooked') { $st.Outcome = 'hooked'; return $true }
+        if ($s.State -eq 'failed') { $st.Outcome = 'failed'; return $true }
+        if ($s.State -eq 'started') { $st.Started = $true }
+    }
+    $p = $st.Process
+    if ($p) {
+        try { $p.Refresh() } catch { }
+        if ($p.HasExited) { $st.Outcome = 'exited'; return $true }
+        $title = ''
+        try { $title = [string]$p.MainWindowTitle } catch { }
+        if ($title -and -not $st.Titles.Contains($title)) { $st.Titles.Add($title) | Out-Null; Log ("goose window: " + $title) }
+        $st.WarningOpen = ($title -eq 'Mod Enabler Warning')
+        if ($st.WarningOpen) { $st.SawWarning = $true; $st.AnsweredAt = $null }
+        if ($title -eq "Couldn't Load Mod") { $st.Outcome = 'loaderror'; return $true }
+        if ($st.SawWarning -and -not $st.WarningOpen -and -not $st.Started) {
+            # the question was answered, the goose runs, and our mod hasn't said a word
+            if (-not $st.AnsweredAt) { $st.AnsweredAt = Get-Date }
+            elseif (((Get-Date) - $st.AnsweredAt).TotalSeconds -gt 10) { $st.Outcome = 'noload'; return $true }
+        }
+    }
+    $elapsed = ((Get-Date) - $st.StartedAt).TotalSeconds
+    # The goose asks about mods before its own window appears, so on Windows the question is the
+    # process's main window and we see it. Not seeing it for a minute means it never came.
+    if (-not $st.SawWarning -and -not $st.Started -and $elapsed -gt 60 -and $p -and $st.CanSeeTitles) { $st.Outcome = 'noquestion'; return $true }
+    # no time limit while the goose is asking about mods: the user may be reading it
+    if (-not $st.WarningOpen -and $elapsed -gt $WaitSeconds) { $st.Outcome = 'timeout'; return $true }
+    return $false
+}
+
+function Wait-Text($st) {
+    $s = [int]((Get-Date) - $st.StartedAt).TotalSeconds
+    if ($st.WarningOpen) {
+        return "Гусь спрашивает про моды (окно «Mod Enabler Warning»).`n`nНажми в нём «Да» (Yes) — это разрешает мод."
+    }
+    if ($st.Started) { return "Мод загрузился, запускается… (" + $s + " с)" }
+    return "Запускаю гуся и жду, пока мод отзовётся… (" + $s + " с)`n`nЕсли гусь спросит про моды — нажми «Да» (Yes)."
+}
+
+function Start-AndWait([string]$exePath, [string]$modDir) {
+    $statusFile = Join-Path $modDir 'GooseDeluxe.status'
+    if (Test-Path -LiteralPath $statusFile) { Remove-Item -LiteralPath $statusFile -Force -ErrorAction SilentlyContinue }
+    $st = @{
+        ModDir = $modDir; Process = $null; Outcome = ''; Status = $null; Started = $false
+        SawWarning = $false; WarningOpen = $false; AnsweredAt = $null; StartedAt = (Get-Date)
+        Titles = (New-Object System.Collections.ArrayList); CanSeeTitles = ($env:OS -eq 'Windows_NT')
+    }
+    Log ("starting " + $exePath)
+    $st.Process = Start-Process -FilePath $exePath -WorkingDirectory (Split-Path -Parent $exePath) -PassThru
+
+    $gui = $false
+    if ($script:GuiOk) {
+        try {
+            $form = New-Object System.Windows.Forms.Form
+            $form.Text = 'GooseDeluxe — проверка'
+            $form.FormBorderStyle = 'FixedToolWindow'
+            $form.StartPosition = 'Manual'
+            $form.ClientSize = New-Object System.Drawing.Size(420, 110)
+            $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+            $form.Location = New-Object System.Drawing.Point(($wa.Right - 440), ($wa.Bottom - 150))
+            $form.TopMost = $true
+            $label = New-Object System.Windows.Forms.Label
+            $label.Dock = 'Fill'
+            $label.Padding = New-Object System.Windows.Forms.Padding(10)
+            $label.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+            $label.Text = Wait-Text $st
+            $form.Controls.Add($label)
+            $timer = New-Object System.Windows.Forms.Timer
+            $timer.Interval = 500
+            $timer.Add_Tick({
+                try {
+                    if (Step-Wait $st) { $timer.Stop(); $form.Close() } else { $label.Text = Wait-Text $st }
+                } catch { Log ("wait step failed: " + $_.Exception.Message); $st.Outcome = 'timeout'; $timer.Stop(); $form.Close() }
+            })
+            $form.Add_Shown({ $timer.Start() })
+            [void]$form.ShowDialog()
+            $timer.Dispose(); $form.Dispose()
+            $gui = $true
+        } catch { Log ("wait window failed, waiting without it: " + $_.Exception.Message) }
+    }
+    if (-not $gui -or -not $st.Outcome) {
+        while (-not (Step-Wait $st)) { Start-Sleep -Milliseconds 500 }
+    }
+    Log ("wait result: " + $st.Outcome + $(if ($st.Status) { ' (' + $st.Status.Line + ')' } else { '' }))
+    return $st
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -197,9 +405,21 @@ try {
     if (-not (Test-Path -LiteralPath $dll)) {
         ShowError ("Рядом с установщиком нет файлов мода (" + $dll + ").`n`n" +
                    "Похоже, архив не распакован. Нажми на zip правой кнопкой → «Извлечь всё…», " +
-                   "а потом запусти «Установить GooseDeluxe.bat» из распакованной папки.")
-        exit 1
+                   "а потом запусти «Установить GooseDeluxe.bat» из распакованной папки.`n`n" +
+                   "Если распаковал, а файла всё равно нет — его убрал антивирус.")
+        exit 3
     }
+    try { $want = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash }
+    catch {
+        ShowError ("Файл мода не читается: " + $_.Exception.Message + "`n`nЧаще всего так делает антивирус. Добавь распакованную папку в исключения антивируса и запусти установку ещё раз.")
+        exit 3
+    }
+    $version = [string](Get-Item -LiteralPath $dll).VersionInfo.FileVersion
+    if (-not $version) { $version = '?' }
+    Note ("GooseDeluxe " + $version + ", отчёт установщика " + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
+    Note ("Система: " + (Get-SystemInfo))
+    $av = @(Get-AntivirusNames)
+    Note ("Антивирус: " + $(if ($av.Count -gt 0) { $av -join ', ' } else { 'не определён' }))
 
     if (-not $DesktopPath) { $DesktopPath = Get-KnownFolder 'Desktop' (Join-Path $env:USERPROFILE 'Desktop') }
     $Downloads = Get-DownloadsPath
@@ -207,35 +427,40 @@ try {
     $GooseHome = Join-Path $DesktopPath $GooseFolderName
     Log ("desktop: " + $DesktopPath)
 
-    # 1. find the goose
+    # 1. find every goose: the running one, the ones shortcuts point at, the usual folders
+    $running = @(Get-RunningGeese)
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $mainHint = $null
+    foreach ($r in $running) {
+        if ($r.Path) {
+            Note ("Гусь запущен отсюда: " + $r.Path)
+            $candidates.Add($r.Path)
+            if (-not $mainHint) { $mainHint = $r.Path }
+        } else { Note "Гусь запущен, но путь к нему не виден" }
+    }
+    foreach ($t in @(Get-ShortcutTargets)) { $candidates.Add($t) }
     if ($SearchRoots.Count -eq 0) {
         $SearchRoots = @($GooseHome, $DesktopPath, $Downloads, $Documents, $ScriptDir, (Split-Path -Parent $ScriptDir), $env:USERPROFILE)
     }
-    $exes = @()
-    $allCopies = @()
-    foreach ($root in $SearchRoots) {
-        $found = @(Find-Files @($root) 'GooseDesktop.exe' 5)
-        $allCopies += $found
-        if ($exes.Count -eq 0 -and $found.Count -gt 0) { $exes = $found }
-    }
-    if ($exes.Count -eq 0) {
+    foreach ($root in $SearchRoots) { foreach ($f in @(Find-Files @($root) 'GooseDesktop.exe' 5)) { $candidates.Add($f.FullName) } }
+    if ($candidates.Count -eq 0) {
         $drives = @()
         try { $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Z]:\\$' } | ForEach-Object { $_.Root } } catch { }
         if ($drives.Count -gt 0) {
             Log 'not in the usual places, scanning drives (this can take a minute)'
-            $exes = @(Find-Files $drives 'GooseDesktop.exe' 4)
+            foreach ($f in @(Find-Files $drives 'GooseDesktop.exe' 4)) { $candidates.Add($f.FullName) }
         }
     }
 
     # 2. no goose yet? look for the friend's .rar and unpack it into Desktop\Гусь
-    if ($exes.Count -eq 0) {
+    if ($candidates.Count -eq 0) {
         $rars = @(Find-Files @($Downloads, $DesktopPath, $Documents, $ScriptDir, (Split-Path -Parent $ScriptDir)) '*.rar' 2 |
                   Where-Object { $_.Name -match 'goose' } | Sort-Object LastWriteTime -Descending)
         if ($rars.Count -gt 0) {
             $rar = @($rars)[0].FullName
             Log ("found archive: " + $rar)
             if (Extract-Rar $rar $GooseHome) {
-                $exes = @(Find-Files @($GooseHome) 'GooseDesktop.exe' 6)
+                foreach ($f in @(Find-Files @($GooseHome) 'GooseDesktop.exe' 6)) { $candidates.Add($f.FullName) }
             } else {
                 New-Item -ItemType Directory -Path $GooseHome -Force | Out-Null
                 Show ("Нашёл архив с гусём:`n" + $rar + "`n`nно распаковать его сам не смог (нет WinRAR/7-Zip). " +
@@ -248,7 +473,16 @@ try {
         }
     }
 
-    if ($exes.Count -eq 0) {
+    # unique existing copies, as folder paths
+    $dirs = New-Object System.Collections.Generic.List[string]
+    foreach ($c in $candidates) {
+        if (-not $c -or -not (Test-Path -LiteralPath $c)) { continue }
+        $d = Split-Path -Parent ([IO.Path]::GetFullPath($c))
+        $dup = $false
+        foreach ($x in $dirs) { if (Same-Dir $x $d) { $dup = $true } }
+        if (-not $dup) { $dirs.Add($d) }
+    }
+    if ($dirs.Count -eq 0) {
         New-Item -ItemType Directory -Path $GooseHome -Force | Out-Null
         Show ("Не нашёл гуся (GooseDesktop.exe) на этом компьютере.`n`n" +
               "Создал папку «" + $GooseFolderName + "» на рабочем столе. Распакуй в неё архив от друга " +
@@ -257,82 +491,88 @@ try {
         exit 0
     }
 
-    $exe = Pick-Goose $exes
-    $gooseDir = $exe.DirectoryName
-    Log ("goose: " + $exe.FullName)
+    # the main copy: the one that was running, else Desktop\Гусь, else the best-looking one
+    $gooseDir = $null
+    if ($mainHint) { $gooseDir = Split-Path -Parent $mainHint }
+    if (-not $gooseDir) { foreach ($d in $dirs) { if (Same-Dir $d $GooseHome) { $gooseDir = $d } } }
+    if (-not $gooseDir) {
+        $exes = @($dirs | ForEach-Object { Get-Item -LiteralPath (Join-Path $_ 'GooseDesktop.exe') })
+        $gooseDir = (Pick-Goose $exes).DirectoryName
+    }
+    Log ("main goose: " + $gooseDir)
 
-    # 3. a running goose holds its mod DLLs open
-    $running = @(Get-Process -Name GooseDesktop -ErrorAction SilentlyContinue)
+    # 3. a running goose holds its mod DLLs open: close every one
     if ($running.Count -gt 0) {
-        if (Ask "Гусь сейчас запущен. Закрыть его, чтобы установить мод?") {
-            $running | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 800
-        } else {
-            Show 'Тогда закрой гуся сам (подержи ESC несколько секунд) и запусти установку ещё раз.'
-            exit 0
-        }
+        Log 'closing the running goose'
+        foreach ($r in $running) { try { $r.Process | Stop-Process -Force -ErrorAction SilentlyContinue } catch { } }
+        Start-Sleep -Milliseconds 1000
     }
 
-    # 4. bring the goose to the Desktop folder
+    # 4. bring the main goose to the Desktop folder (only if it lives somewhere odd)
     # never move the folder the installer itself is running from (zip extracted inside the goose folder)
-    if ((-not (Test-Under $gooseDir $DesktopPath)) -and (-not (Test-Under $ScriptDir $gooseDir))) {
+    if ((-not (Test-Under $gooseDir $DesktopPath)) -and (-not (Test-Under $ScriptDir $gooseDir)) -and -not $mainHint) {
         $canUseHome = (-not (Test-Path -LiteralPath $GooseHome)) -or
                       (-not (Get-ChildItem -LiteralPath $GooseHome -Force | Select-Object -First 1))
         if ($canUseHome -and (Ask ("Гусь найден здесь:`n" + $gooseDir + "`n`nПеренести его в папку «" + $GooseFolderName + "» на рабочем столе?"))) {
+            $oldDir = $gooseDir
             $oldParent = Split-Path -Parent $gooseDir
             Move-Contents $gooseDir $GooseHome
             Remove-EmptyDirs $gooseDir
             # the .rar unpacks into "Desktop Goose v0.31\DesktopGoose v0.31"; drop the empty shells too
             if ((Split-Path -Leaf $oldParent) -match 'goose') { Remove-EmptyDirs $oldParent }
             $gooseDir = $GooseHome
+            for ($i = 0; $i -lt $dirs.Count; $i++) { if (Same-Dir $dirs[$i] $oldDir) { $dirs[$i] = $GooseHome } }
             Log ("moved goose to " + $gooseDir)
         }
-    } elseif ($gooseDir -ne $GooseHome -and (Test-Under $gooseDir $GooseHome)) {
+    } elseif ((-not (Same-Dir $gooseDir $GooseHome)) -and (Test-Under $gooseDir $GooseHome)) {
         # unpacked straight from the .rar into Desktop\Гусь: flatten the nested folders
+        $oldDir = $gooseDir
         Move-Contents $gooseDir $GooseHome
         Remove-EmptyDirs (Join-Path $GooseHome (Split-Path -Leaf (Split-Path -Parent $gooseDir)))
         Remove-EmptyDirs $gooseDir
         $gooseDir = $GooseHome
+        for ($i = 0; $i -lt $dirs.Count; $i++) { if (Same-Dir $dirs[$i] $oldDir) { $dirs[$i] = $GooseHome } }
         Log ("flattened goose into " + $gooseDir)
     }
 
-    # 5. install the mod
-    $modDir = [IO.Path]::Combine($gooseDir, 'Assets', 'Mods', $ModName)
-    New-Item -ItemType Directory -Path $modDir -Force | Out-Null
-    Copy-Item -LiteralPath $dll -Destination (Join-Path $modDir 'GooseDeluxe.dll') -Force
-    if (-not (Test-Path -LiteralPath (Join-Path $modDir 'GooseDeluxe.ini'))) {
-        Copy-Item -LiteralPath $ini -Destination (Join-Path $modDir 'GooseDeluxe.ini') -Force
+    # 5. install into every copy, the main one first: whichever the user starts, the mod is there
+    $ordered = New-Object System.Collections.Generic.List[string]
+    $ordered.Add($gooseDir)
+    foreach ($d in $dirs) { if (-not (Same-Dir $d $gooseDir) -and (Test-Path -LiteralPath (Join-Path $d 'GooseDesktop.exe'))) { $ordered.Add($d) } }
+    $modDirs = @{}
+    foreach ($d in $ordered) {
+        try {
+            $modDirs[$d] = Install-Into $d $dll $ini
+            Note ("Мод поставлен: " + $d)
+        } catch {
+            Note ("Не смог поставить мод в " + $d + ": " + $_.Exception.Message)
+            if (Same-Dir $d $gooseDir) { throw }
+        }
     }
-    # the goose loads every DLL in a mod folder; a stray copy of the API there breaks the mod
-    $strayApi = Join-Path $modDir 'GooseModdingAPI.dll'
-    if (Test-Path -LiteralPath $strayApi) { Remove-Item -LiteralPath $strayApi -Force }
-    Enable-Mods $gooseDir
-    Log ("mod installed to " + $modDir)
+    $modDir = $modDirs[$gooseDir]
 
-    # check that the new DLL really landed (a running or locked goose could keep the old one)
-    $installedDll = Join-Path $modDir 'GooseDeluxe.dll'
-    $want = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
-    $have = (Get-FileHash -LiteralPath $installedDll -Algorithm SHA256).Hash
-    if ($want -ne $have) {
-        ShowError ("Мод скопировался не полностью: в папке гуся осталась старая версия.`n`n" + $installedDll + "`n`nЗакрой гуся (подержи ESC или через меню «Выгнать гуся») и запусти установку ещё раз.")
-        exit 1
+    # 6. did the files stay? an antivirus may take a new DLL away a moment after it is written
+    Start-Sleep -Seconds 2
+    $check = Test-Installed $modDir $want
+    Note ("Проверка файла мода: " + $check)
+    if ($check -ne 'ok') {
+        $why = if ($check -eq 'missing') { "Файл мода исчез из папки гуся сразу после установки — его удалил антивирус" }
+               elseif ($check -eq 'old') { "В папке гуся осталась старая версия мода (файл занят)" }
+               else { "Файл мода не читается (" + $check + ") — его заблокировал антивирус" }
+        [void](Copy-Report)
+        ShowError ($why + ".`n`n" + $modDir + "`n`n" +
+                   $(if ($av.Count -gt 0) { "Антивирус: " + ($av -join ', ') + ". " } else { "" }) +
+                   "Добавь папку гуся в исключения антивируса и запусти установку ещё раз.`n`nОтчёт скопирован — вставь его в чат (Ctrl+V).")
+        exit 3
     }
-    $version = (Get-Item -LiteralPath $installedDll).VersionInfo.FileVersion
-    if (-not $version) { $version = '?' }
-    Log ("verified GooseDeluxe " + $version + " sha256 " + $have)
     $cfgText = [IO.File]::ReadAllText((Join-Path $gooseDir 'config.ini'))
     if ($cfgText -notmatch '(?m)^EnableMods=True') {
         ShowError "Не получилось включить моды в config.ini гуся. Открой его Блокнотом и поставь EnableMods=True."
-        exit 1
+        exit 3
     }
 
-    # other copies of the goose on this PC don't have the new mod: say so
-    $others = @($allCopies | ForEach-Object { $_.DirectoryName } | Where-Object { $_ -and ($_ -ne $gooseDir) -and (Test-Path -LiteralPath (Join-Path $_ 'GooseDesktop.exe')) } | Sort-Object -Unique)
-    foreach ($o in $others) { Log ("another goose copy: " + $o) }
-
-    # 6. desktop shortcut
+    # 7. desktop shortcut to the main copy
     $shortcut = Join-Path $DesktopPath ($GooseFolderName + '.lnk')
-    $shortcutOk = $false
     try {
         $ws = New-Object -ComObject WScript.Shell
         $sc = $ws.CreateShortcut($shortcut)
@@ -341,28 +581,66 @@ try {
         $sc.IconLocation = (Join-Path $gooseDir 'GooseDesktop.exe') + ',0'
         $sc.Description = 'Desktop Goose + GooseDeluxe'
         $sc.Save()
-        $shortcutOk = $true
         Log ("shortcut: " + $shortcut)
     } catch { Log ("shortcut failed: " + $_.Exception.Message) }
 
-    # 7. done
-    $summary = "Готово! Установлен GooseDeluxe " + $version + ".`n`nГусь лежит здесь:`n" + $gooseDir + "`n`nМод проверен, моды в config.ini включены"
-    if ($shortcutOk) { $summary += ", ярлык «" + $GooseFolderName + "» на рабочем столе создан" }
-    $summary += ".`n`nПри запуске гусь спросит про моды (окно «Mod Enabler Warning») — нажми «Да» (Yes).`nПотом нажми на гуся правой кнопкой мыши — там меню и пульт."
-    if ($others.Count -gt 0) {
-        $summary += "`n`nВНИМАНИЕ: на компьютере есть ещё копии гуся, в них нового мода нет:`n" + ($others -join "`n") + "`nЗапускай гуся через ярлык «" + $GooseFolderName + "» на рабочем столе."
+    $howTo = "Меню гуся: нажми на гуся ПРАВОЙ кнопкой мыши. Ещё: значок гуся у часов (может прятаться под стрелкой ^) или Ctrl+Alt+M.`nКучи листьев убираются кликом, а левый клик по гусю — гудок."
+    if ($NoLaunch) {
+        Show ("Готово! GooseDeluxe " + $version + " установлен в:`n" + ($ordered -join "`n") + "`n`n" + $howTo)
+        Log '=== done (not started) ==='
+        exit 0
     }
-    if (-not $NoLaunch -and (Ask ($summary + "`n`nЗапустить гуся сейчас?"))) {
-        Start-Process -FilePath (Join-Path $gooseDir 'GooseDesktop.exe') -WorkingDirectory $gooseDir
-    } else {
-        if ($NoLaunch) { Show $summary }
-        try { Start-Process explorer.exe -ArgumentList ('"' + $gooseDir + '"') } catch { }
+
+    # 8. start the goose and wait until the mod says it runs
+    $exePath = Join-Path $gooseDir 'GooseDesktop.exe'
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        $st = Start-AndWait $exePath $modDir
+        if ($st.Outcome -eq 'noload' -and $attempt -lt 3) {
+            if (Ask ("Гусь запустился, но без мода.`n`nСкорее всего, в окне «Mod Enabler Warning» нажали «Нет». Перезапустить гуся? В этот раз нажми «Да» (Yes).")) {
+                try { $st.Process | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
+                Start-Sleep -Milliseconds 800
+                continue
+            }
+        }
+        break
     }
-    Log '=== done ==='
-    exit 0
+
+    if ($st.Outcome -eq 'hooked') {
+        Log ('=== done: the mod runs (' + $st.Status.Line + ') ===')
+        Show ("Готово! Мод работает ✔  (GooseDeluxe " + $st.Status.Version + ")`n`nГусь: " + $gooseDir + "`n`n" + $howTo)
+        exit 0
+    }
+
+    # 9. it didn't work: say why as well as we can, and hand over a report
+    Note ("Итог ожидания: " + $st.Outcome + $(if ($st.Status) { ' — ' + $st.Status.Line } else { ' — статуса от мода нет' }))
+    Note ("Окна гуся: " + $(if ($st.Titles.Count -gt 0) { ($st.Titles -join ', ') } else { 'не видно' }))
+    Note ("Файл мода сейчас: " + (Test-Installed $modDir $want))
+    try { Note ("Папка мода: " + ((Get-ChildItem -LiteralPath $modDir -Force | ForEach-Object { $_.Name + ' (' + $_.Length + ')' }) -join ', ')) } catch { }
+    try { Note ("config.ini: " + (([IO.File]::ReadAllLines((Join-Path $gooseDir 'config.ini')) | Where-Object { $_ -match '^EnableMods' }) -join ' ')) } catch { }
+    foreach ($r in @(Get-RunningGeese)) { Note ("Сейчас запущен: " + $r.Path) }
+    Note "Журнал мода (последние строки):"
+    foreach ($l in @(Get-LogTail $modDir 15)) { Note ("  " + $l) }
+    $copied = Copy-Report
+    $tail = "`n`n" + $(if ($copied) { "Отчёт скопирован — вставь его в чат со мной (Ctrl+V), я разберусь." } else { "Отчёт лежит здесь: " + $ReportPath })
+
+    $msg = switch ($st.Outcome) {
+        'failed'     { "Мод запустился, но споткнулся: " + $st.Status.Detail + "`nГусь работает по-старому." }
+        'loaderror'  { "Гусь показал ошибку «Couldn't Load Mod» — он не смог загрузить мод." }
+        'exited'     { "Гусь закрылся сразу после запуска." }
+        'noload'     { "Гусь работает, но мод не загрузился (в окне про моды нажали «Нет», или гусь не видит мод)." }
+        'noquestion' { "Гусь не спросил про моды (окна «Mod Enabler Warning» не было), и мод не отозвался." }
+        default      { "Не дождался ответа от мода. Если гусь спрашивал про моды, а «Да» не нажато — запусти установку ещё раз." }
+    }
+    if ((Test-Installed $modDir $want) -eq 'missing') { $msg = "Файл мода пропал из папки гуся — его удалил антивирус" + $(if ($av.Count -gt 0) { " (" + ($av -join ', ') + ")" } else { "" }) + ". Добавь папку гуся в исключения." }
+    ShowError ($msg + "`n`nГусь: " + $gooseDir + $tail)
+    exit 2
 }
 catch {
-    ShowError ("Что-то пошло не так:`n" + $_.Exception.Message + "`n`nПодробности в файле:`n" + $LogPath)
+    Note ("Ошибка: " + $_.Exception.Message)
+    [void](Copy-Report)
+    ShowError ("Что-то пошло не так:`n" + $_.Exception.Message + "`n`nОтчёт скопирован — вставь его в чат (Ctrl+V). Подробности в файле:`n" + $LogPath)
     Log $_.ScriptStackTrace
-    exit 1
+    exit 3
 }

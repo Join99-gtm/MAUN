@@ -82,12 +82,16 @@ namespace GooseDeluxe
                     Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n"),
                     TabStop = false,
                 };
-                box.ScrollBars = text.Length > 220 ? ScrollBars.Vertical : ScrollBars.None;
                 Panel pad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10, 8, 6, 4), BackColor = Paper };
                 pad.Controls.Add(box);
                 Controls.Add(pad);
-                int lines = Math.Min(9, 2 + text.Length / 28 + CountLines(text));
-                ClientSize = new Size(300, 30 + lines * 20 + (bottom != null ? bottom.Height : 0));
+                // as tall as the text needs, up to a limit; only a really long note gets a scrollbar
+                const int width = 300, maxTextHeight = 400;
+                Size need = TextRenderer.MeasureText(box.Text, box.Font, new Size(width - pad.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth, int.MaxValue),
+                                                     TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+                int textHeight = need.Height + pad.Padding.Vertical + 12;
+                box.ScrollBars = textHeight > maxTextHeight ? ScrollBars.Vertical : ScrollBars.None;
+                ClientSize = new Size(width, Math.Max(90, Math.Min(maxTextHeight, textHeight)) + (bottom != null ? bottom.Height : 0));
                 box.Select(0, 0);
             }
             if (bottom != null) Controls.Add(bottom);
@@ -121,13 +125,6 @@ namespace GooseDeluxe
                 if (image != null) image.Dispose();
                 if (imageStream != null) imageStream.Dispose();
             }
-        }
-
-        private static int CountLines(string s)
-        {
-            int n = 0;
-            foreach (char c in s) if (c == '\n') n++;
-            return n;
         }
 
         private static Size Fit(Size img, Size max, Size min)

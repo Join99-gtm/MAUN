@@ -48,6 +48,8 @@ namespace GooseDeluxe
         public event Action<int> HotkeyPressed;
         /// <summary>The goose was right-clicked (only possible while <see cref="SetClickable"/> is on).</summary>
         public event Action GooseRightClicked;
+        /// <summary>Left click on the goose or a leaf pile, in window coordinates (only while <see cref="SetClickable"/> is on).</summary>
+        public event Action<Point> LeftClicked;
 
         private bool clickable;
 
@@ -67,6 +69,7 @@ namespace GooseDeluxe
         protected override void WndProc(ref Message m)
         {
             const int WM_HOTKEY = 0x0312, WM_MOUSEACTIVATE = 0x0021, WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
+            const int WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203;
             const int MA_NOACTIVATE = 3;
             switch (m.Msg)
             {
@@ -82,6 +85,14 @@ namespace GooseDeluxe
                 case WM_RBUTTONUP:
                     Action r = GooseRightClicked;
                     if (r != null) r();
+                    return;
+                case WM_LBUTTONDOWN:
+                case WM_LBUTTONDBLCLK:
+                    return;
+                case WM_LBUTTONUP:
+                    Action<Point> l = LeftClicked;
+                    long lp = m.LParam.ToInt64();
+                    if (l != null) l(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
                     return;
             }
             base.WndProc(ref m);

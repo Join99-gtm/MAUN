@@ -46,6 +46,10 @@ namespace GooseDeluxe
         public bool WinterScarf = true;
         public bool NewYearHat = true;
 
+        // clicks and variety (0.5)
+        public bool ClickLeafPiles = true;
+        public bool NoRepeats = true;
+
         // friends (0.2)
         public bool Friends = true;
         public bool FriendCanStealMouse = true;
@@ -58,6 +62,7 @@ namespace GooseDeluxe
             "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes",
             "Friends", "FriendCanStealMouse", "NtfyServer",
             "Seasons", "WinterScarf", "NewYearHat",
+            "ClickLeafPiles", "NoRepeats",
         };
 
         public static DeluxeConfig Load(string path)
@@ -107,6 +112,8 @@ namespace GooseDeluxe
             if (kv.TryGetValue("Seasons", out v)) c.Seasons = SeasonClock.NormalizeSetting(v) ?? c.Seasons;
             c.WinterScarf = GetBool(kv, "WinterScarf", c.WinterScarf);
             c.NewYearHat = GetBool(kv, "NewYearHat", c.NewYearHat);
+            c.ClickLeafPiles = GetBool(kv, "ClickLeafPiles", c.ClickLeafPiles);
+            c.NoRepeats = GetBool(kv, "NoRepeats", c.NoRepeats);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -170,6 +177,8 @@ namespace GooseDeluxe
             add("Seasons", Seasons, "Времена года: Auto — по дате, Off — выключить, или Winter/Spring/Summer/Autumn (можно по-русски: Зима…). Листья — только осенью, снег — зимой");
             add("WinterScarf", B(WinterScarf), "Шарф на гусе зимой");
             add("NewYearHat", B(NewYearHat), "Новогодняя шапка с 20 декабря по 10 января (если своя шляпа не выбрана)");
+            add("ClickLeafPiles", B(ClickLeafPiles), "Кучи листьев разлетаются от клика мышкой");
+            add("NoRepeats", B(NoRepeats), "Мемы и записки гуся по кругу, без повторов");
             return sb.ToString();
         }
 
@@ -209,7 +218,9 @@ namespace GooseDeluxe
         {
             foreach (string k in new[] { "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes", "Friends", "FriendCanStealMouse", "NtfyServer" })
                 if (keys.Contains(k)) return "0.2";
-            return "0.3";
+            foreach (string k in new[] { "Seasons", "WinterScarf", "NewYearHat" })
+                if (keys.Contains(k)) return "0.3";
+            return "0.5";
         }
 
         private static bool GetBool(Dictionary<string, string> kv, string key, bool def)

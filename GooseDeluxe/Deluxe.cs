@@ -60,6 +60,22 @@ namespace GooseDeluxe
             catch { }
         }
 
+        /// <summary>
+        /// GooseDeluxe.status for the installer, which starts the goose and waits for it: one line
+        /// "state|UTC time|version|details", where state is started, hooked or failed.
+        /// </summary>
+        public static void Status(string state, string detail)
+        {
+            try
+            {
+                string dir = ModDir ?? Path.GetDirectoryName(typeof(Deluxe).Assembly.Location);
+                string line = state + "|" + DateTime.UtcNow.ToString("o") + "|" + ModInfo.Version + "|" +
+                              (detail ?? "").Replace('\r', ' ').Replace('\n', ' ').Replace('|', '/');
+                File.WriteAllText(Path.Combine(dir, "GooseDeluxe.status"), line, new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
         public static void RunUiQueue()
         {
             Action a;

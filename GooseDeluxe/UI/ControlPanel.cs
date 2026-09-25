@@ -245,6 +245,8 @@ namespace GooseDeluxe
             behave.Controls.Add(Setting("Прятаться в играх и кино", "PauseInFullscreen"));
             behave.Controls.Add(Setting("Правильная скорость", "FixSpeed"));
             behave.Controls.Add(Setting("Честный рандом проделок", "HonestRandom"));
+            behave.Controls.Add(Setting("Мемы и записки без повторов", "NoRepeats"));
+            behave.Controls.Add(Setting("Кучи листьев убираются кликом", "ClickLeafPiles"));
 
             // --- animation
             TableLayoutPanel anim = Grid(2);

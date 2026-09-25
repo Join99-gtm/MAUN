@@ -7,7 +7,7 @@
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <Product>GooseDeluxe</Product>
     <Description>Graphics and animation overhaul mod for Desktop Goose 0.31</Description>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
