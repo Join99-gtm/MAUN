@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+	<id>files_middleclick</id>
+	<name>Files middle-click fix</name>
+	<summary>Makes middle-click on a file name open it in a new tab in Chrome on Windows</summary>
+	<description><![CDATA[Chrome on Windows treats a middle-click on the (scrollable) Files list as the start of autoscroll and never reports the click to Nextcloud, so "open in new tab" silently does nothing.
+
+This app adds one small script to the Files app and public share pages: when the middle button is pressed on a file name or preview, it cancels the browser's default action (autoscroll) so the click reaches Nextcloud as usual. Nothing else is changed.]]></description>
+	<version>1.0.0</version>
+	<licence>agpl</licence>
+	<author>MAUN</author>
+	<namespace>FilesMiddleClick</namespace>
+	<category>files</category>
+	<bugs>https://github.com/join99-gtm/maun/issues</bugs>
+	<dependencies>
+		<nextcloud min-version="31" max-version="34"/>
+	</dependencies>
+</info>
