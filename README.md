@@ -18,6 +18,14 @@
 
 ## Установка
 
+Самый простой путь — установщик из архива `GooseDeluxe-vX.zip`: распаковать zip, запустить
+«Установить GooseDeluxe.bat». Он найдёт гуся на диске (или распакует `Desktop_Goose_v0.31.rar`
+из «Загрузок», если есть WinRAR/7-Zip), перенесёт его в папку «Гусь» на рабочем столе, скопирует
+мод, включит `EnableMods` и сделает ярлык. Скрипт — `installer/install.ps1`, работает на
+Windows PowerShell 5.1 без прав администратора, лог пишет в `install-log.txt` рядом с собой.
+
+Вручную:
+
 1. Скопировать `GooseDeluxe.dll` и `GooseDeluxe.ini` в `Assets/Mods/GooseDeluxe/` рядом с `GooseDesktop.exe`
    (папку создать; в ней не должно быть `GooseModdingAPI.dll`).
 2. В `config.ini` поставить `EnableMods=True`.
