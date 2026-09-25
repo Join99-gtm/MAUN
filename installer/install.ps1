@@ -272,7 +272,8 @@ try {
     }
 
     # 4. bring the goose to the Desktop folder
-    if (-not (Test-Under $gooseDir $DesktopPath)) {
+    # never move the folder the installer itself is running from (zip extracted inside the goose folder)
+    if ((-not (Test-Under $gooseDir $DesktopPath)) -and (-not (Test-Under $ScriptDir $gooseDir))) {
         $canUseHome = (-not (Test-Path -LiteralPath $GooseHome)) -or
                       (-not (Get-ChildItem -LiteralPath $GooseHome -Force | Select-Object -First 1))
         if ($canUseHome -and (Ask ("Гусь найден здесь:`n" + $gooseDir + "`n`nПеренести его в папку «" + $GooseFolderName + "» на рабочем столе?"))) {
