@@ -48,7 +48,7 @@ n=$(ps -eo pcpu,comm | awk '/php-fpm/ && $1>50' | wc -l)
 systemctl is-active --quiet fts-index.service && echo "  --   индексация поиска (fts-index) сейчас работает"
 
 h "Ядро и драйвер NVIDIA"
-newest=$(ls /lib/modules | sort -V | tail -1)
+newest=$(ls /lib/modules | grep -E "^[0-9]" | sort -V | tail -1)
 echo "  загружено ядро: $(uname -r), самое новое установленное: $newest"
 v=$(modinfo -k "$newest" -F version nvidia 2>/dev/null)
 [ -n "$v" ] && ok "модуль NVIDIA для $newest есть ($v)" || bad "для $newest НЕТ модуля NVIDIA: не перезагружать, пока не поставлен"
