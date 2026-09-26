@@ -52,7 +52,6 @@ namespace GooseDeluxe
         private readonly Random rng = new Random();
         private PhraseBook phrases;
         private Recordings recordings;
-        private int importedVoices;
         private Speaker speaker;
         private SpeechAudio speechAudio;
         private string windowsVoiceError;
@@ -217,7 +216,7 @@ namespace GooseDeluxe
                 phrases = new PhraseBook(Deluxe.ModDir);
                 recordings = new Recordings(VoiceFolder);
                 EnsureVoiceFolder();
-                ThreadPool.QueueUserWorkItem(_ => { CleanVoiceFiles(); ImportVoices(); });
+                ThreadPool.QueueUserWorkItem(_ => CleanVoiceFiles());
                 speechAudio = new SpeechAudio();
                 speaker = new Speaker(speechAudio, BuildUtterance);
                 SayTask.Arrived = () => { if (speaker != null) speaker.Release(); };
@@ -1194,7 +1193,6 @@ namespace GooseDeluxe
             string rec = recordings.Files == 0 ? "готовых записей нет (папка «Голос» пуста)"
                 : "готовые записи: " + recordings.Files + " файлов для " + keys.Count + " фраз" +
                   (nameless.Count > 0 ? " (без фразы в имени: " + string.Join(", ", nameless.ToArray()) + ")" : "") +
-                  (importedVoices > 0 ? ", " + importedVoices + " новых забрано из Документы\\Codex" : "") +
                   (recordingError != null ? ". Не читается: " + recordingError : "");
             if (cfg.PhraseVoice == "Records")
                 return recordings.Files > 0 ? rec + " — гусь говорит только их" : rec + " — пока говорит по-гусиному; записи — в меню «Папка голоса»";
@@ -1312,64 +1310,15 @@ namespace GooseDeluxe
             {
                 Directory.CreateDirectory(VoiceFolder);
                 string help = Path.Combine(VoiceFolder, "Как добавить свои записи.txt");
-                if (!File.Exists(help))
-                    File.WriteAllText(help,
+                File.WriteAllText(help,
                         "Сюда кладутся готовые записи фраз гуся: WAV или MP3.\r\n\r\n" +
-                        "Назови файл словами фразы — например «Где акты скрытых работ.wav» или «Остановите_стройку_02.wav»:\r\n" +
-                        "гусь сам поймёт, какая это фраза из Фразы.txt, и покажет её в облачке. Если такой фразы в списке\r\n" +
-                        "нет, в облачке будет имя файла. Несколько файлов одной фразы — это дубли, гусь говорит их по очереди.\r\n\r\n" +
-                        "Пока тут есть записи, гусь говорит только их (пульт → «Настройки» → «Голос фраз» — можно иначе).\r\n" +
-                        "Новые файлы из папки Документы\\Codex\\…\\outputs гусь забирает сюда сам при запуске.\r\n",
+                        "Какой файл какая фраза — по списку в .txt рядом (строки вида «01.wav — Инженер ПТО! …»),\r\n" +
+                        "или по номеру (01.wav — первая фраза из Фразы.txt), или по словам в имени файла\r\n" +
+                        "(«Где акты скрытых работ.wav»). Несколько файлов одной фразы — дубли, гусь говорит их по очереди.\r\n\r\n" +
+                        "Пока тут есть записи, гусь говорит только их (пульт → «Настройки» → «Голос фраз» — можно иначе).\r\n",
                         new System.Text.UTF8Encoding(true));
             }
             catch (Exception ex) { Deluxe.Log("voice folder: " + ex.Message); }
-        }
-
-        /// <summary>
-        /// Voice lines the user makes elsewhere land in Documents\Codex\…\outputs (they said so): new audio files
-        /// from there are copied into «Голос» at start (never deleted or overwritten). Runs on a worker thread.
-        /// </summary>
-        private void ImportVoices()
-        {
-            try
-            {
-                string codex = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Codex");
-                if (!Directory.Exists(codex)) return;
-                List<string> outputs = new List<string>();
-                FindOutputs(codex, 0, outputs);
-                int copied = 0;
-                foreach (string dir in outputs)
-                    foreach (string f in Directory.GetFiles(dir))
-                    {
-                        if (Array.IndexOf(Recordings.Extensions, Path.GetExtension(f).ToLowerInvariant()) < 0) continue;
-                        FileInfo fi = new FileInfo(f);
-                        if (fi.Length > 50L * 1024 * 1024) continue;
-                        string to = Path.Combine(VoiceFolder, fi.Name);
-                        if (File.Exists(to))
-                        {
-                            if (new FileInfo(to).Length == fi.Length) continue;
-                            to = Path.Combine(VoiceFolder, Path.GetFileNameWithoutExtension(fi.Name) + " (" + Path.GetFileName(dir.TrimEnd('\\', '/')) + "-" + fi.Length + ")" + fi.Extension);
-                            if (File.Exists(to)) continue;
-                        }
-                        File.Copy(f, to);
-                        copied++;
-                    }
-                importedVoices = copied;
-                if (copied > 0) Deluxe.Log("voice lines imported from " + codex + ": " + copied);
-            }
-            catch (Exception ex) { Deluxe.Log("voice import: " + ex.Message); }
-        }
-
-        private static void FindOutputs(string dir, int depth, List<string> found)
-        {
-            if (depth > 4) return;
-            string[] subs;
-            try { subs = Directory.GetDirectories(dir); } catch { return; }
-            foreach (string d in subs)
-            {
-                if (Path.GetFileName(d).Equals("outputs", StringComparison.OrdinalIgnoreCase)) found.Add(d);
-                FindOutputs(d, depth + 1, found);
-            }
         }
 
         /// <summary>What the goose may say: with «Только готовые записи» (Records) and any recordings — only the

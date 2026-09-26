@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -58,7 +59,10 @@ namespace GooseDeluxe
                     foreach (string f in Directory.GetFiles(folder))
                         if (Array.IndexOf(Extensions, System.IO.Path.GetExtension(f).ToLowerInvariant()) >= 0) files.Add(f);
                 files.Sort(StringComparer.OrdinalIgnoreCase);
-                foreach (string f in files)
+                List<string> lists = new List<string>();
+                if (Directory.Exists(folder)) lists.AddRange(Directory.GetFiles(folder, "*.txt"));
+                lists.Sort(StringComparer.OrdinalIgnoreCase);
+                foreach (string f in files.Concat(lists))
                 {
                     FileInfo fi = new FileInfo(f);
                     sig.Append(fi.Name).Append('|').Append(fi.Length).Append('|').Append(fi.LastWriteTimeUtc.Ticks).Append('\n');
@@ -67,13 +71,44 @@ namespace GooseDeluxe
                 string s = sig.ToString();
                 if (s == signature) return;
                 signature = s;
-                takes = Scan(files, phrases);
+                takes = Scan(files, phrases, ReadLists(lists));
                 LastError = null;
             }
             catch (Exception ex) { LastError = ex.Message; }
         }
 
-        private static List<Take> Scan(List<string> files, IList<string> phrases)
+        /// <summary>
+        /// A list in the folder saying which file is which phrase, one per line: «01.wav — Инженер ПТО! …» (a dash,
+        /// a hyphen, a colon or «=» between them). Voice tools and the user's own folders come like that.
+        /// </summary>
+        public static Dictionary<string, string> ReadLists(IEnumerable<string> textFiles)
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            System.Text.RegularExpressions.Regex line = new System.Text.RegularExpressions.Regex(
+                "^\\s*(.+?\\.(?:wav|mp3|wma|m4a|aac))\\s*(?:—|–|-|:|=)\\s*(.+?)\\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            foreach (string f in textFiles)
+            {
+                string[] lines;
+                try { lines = ReadText(f).Replace("\r\n", "\n").Split('\n'); }
+                catch (IOException) { continue; }
+                foreach (string l in lines)
+                {
+                    System.Text.RegularExpressions.Match m = line.Match(l);
+                    if (m.Success) map[System.IO.Path.GetFileName(m.Groups[1].Value.Trim())] = System.Text.RegularExpressions.Regex.Replace(m.Groups[2].Value, "\\s+", " ");
+                }
+            }
+            return map;
+        }
+
+        /// <summary>UTF-8 (with or without BOM), or the Windows Cyrillic code page if it isn't valid UTF-8.</summary>
+        private static string ReadText(string path)
+        {
+            byte[] b = File.ReadAllBytes(path);
+            try { return new UTF8Encoding(false, true).GetString(b).TrimStart('\uFEFF'); }
+            catch (DecoderFallbackException) { return Encoding.GetEncoding(1251).GetString(b); }
+        }
+
+        private static List<Take> Scan(List<string> files, IList<string> phrases, Dictionary<string, string> listed)
         {
             List<Take> list = new List<Take>();
             HashSet<string> seen = new HashSet<string>();
@@ -90,7 +125,9 @@ namespace GooseDeluxe
                     }
                     catch (IOException) { continue; } // still being written or locked: next time
                     string name = System.IO.Path.GetFileNameWithoutExtension(f);
-                    string text = Match(name, phrases) ?? TextFromName(name);
+                    string text;
+                    if (!listed.TryGetValue(System.IO.Path.GetFileName(f), out text)) text = Match(name, phrases) ?? TextFromName(name);
+                    if (text.Length == 0) text = ByNumber(name, phrases) ?? ""; // «07.wav»: the 7th phrase
                     list.Add(new Take { Path = f, Text = text, Key = text.Length > 0 ? text : Nameless + f });
                 }
             }
@@ -163,6 +200,15 @@ namespace GooseDeluxe
                 }
             }
             return best;
+        }
+
+        /// <summary>«07.wav», «фраза_07»: the phrase with that number in Фразы.txt (one number in the name only).</summary>
+        public static string ByNumber(string fileName, IList<string> phrases)
+        {
+            System.Text.RegularExpressions.MatchCollection ms = System.Text.RegularExpressions.Regex.Matches(fileName ?? "", "\\d+");
+            int n;
+            if (ms.Count != 1 || phrases == null || !int.TryParse(ms[0].Value, out n)) return null;
+            return n >= 1 && n <= phrases.Count ? phrases[n - 1] : null;
         }
 
         /// <summary>A file named like a phrase («Где акты скрытых работ.wav») without one in the list: the name is

@@ -265,6 +265,15 @@ function Install-Into([string]$gooseDir, [string]$dll, [string]$ini) {
     if ((Test-Path -LiteralPath $voiceFrom) -and -not (Same-Dir $voiceFrom (Join-Path $modDir 'Голос'))) {
         $voiceTo = Join-Path $modDir 'Голос'
         New-Item -ItemType Directory -Path $voiceTo -Force | Out-Null
+        # 0.8.2: the voice folder is exactly the user's set of 30; earlier test takes (0.8.1) go to «Старые записи»
+        $keep = @{}
+        foreach ($f in Get-ChildItem -LiteralPath $voiceFrom -File) { $keep[$f.Name.ToLowerInvariant()] = $true }
+        $old = Join-Path $voiceTo 'Старые записи'
+        foreach ($f in Get-ChildItem -LiteralPath $voiceTo -File) {
+            if ($f.Extension -notmatch '^\.(wav|mp3|wma|m4a|aac)$' -or $keep.ContainsKey($f.Name.ToLowerInvariant())) { continue }
+            New-Item -ItemType Directory -Path $old -Force | Out-Null
+            try { Move-Item -LiteralPath $f.FullName -Destination (Join-Path $old $f.Name) -Force } catch { }
+        }
         foreach ($f in Get-ChildItem -LiteralPath $voiceFrom -File) {
             $to = Join-Path $voiceTo $f.Name
             if (-not (Test-Path -LiteralPath $to)) { Copy-Item -LiteralPath $f.FullName -Destination $to -Force }

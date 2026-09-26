@@ -37,6 +37,27 @@ namespace Tests
                 File.WriteAllBytes(args[2], DriftSynth.Wav(VoiceFx.Goose(pcm, rate, double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture)), rate));
                 return 0;
             }
+            if (args.Length == 2 && args[0] == "--scan-voices") // which phrase each recording in a folder says
+            {
+                Console.OutputEncoding = Encoding.UTF8;
+                Recordings rec = new Recordings(args[1]);
+                IList<string> phrases = PhraseBook.Parse(PhraseBook.DefaultText());
+                rec.Refresh(phrases, 0);
+                int bad = 0;
+                foreach (string key in rec.Keys())
+                {
+                    Recordings.Take t = rec.NextTake(key, false);
+                    int rate;
+                    string info;
+                    try { float[] x = WavFile.Read(t.Path, out rate); info = (x.Length / (double)rate).ToString("0.0") + " с"; }
+                    catch (Exception ex) { info = "НЕ ЧИТАЕТСЯ: " + ex.Message; bad++; }
+                    int n = phrases.IndexOf(t.Text) + 1;
+                    if (n == 0) bad++;
+                    Console.WriteLine(Path.GetFileName(t.Path) + " → " + (n > 0 ? "фраза " + n : "НЕ ИЗ СПИСКА") + ", " + info + ": " + t.Text);
+                }
+                Console.WriteLine(rec.Files + " файлов, " + rec.Keys().Count + " фраз, проблем: " + bad);
+                return bad == 0 ? 0 : 1;
+            }
             if (args.Length == 3 && args[0] == "--honk-voice")
             {
                 double[] times;
