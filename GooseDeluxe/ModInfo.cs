@@ -2,6 +2,6 @@ namespace GooseDeluxe
 {
     internal static class ModInfo
     {
-        public const string Version = "0.8.3";
+        public const string Version = "0.8.4";
     }
 }

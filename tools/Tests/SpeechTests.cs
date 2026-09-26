@@ -24,7 +24,7 @@ namespace Tests
             {
                 string builtIn = PhraseBook.DefaultText();
                 List<string> all = PhraseBook.Parse(builtIn);
-                Check("в мод вшиты 50 фраз пользователя", all.Count == 50, all.Count.ToString());
+                Check("в мод вшиты 80 фраз пользователя", all.Count == 80, all.Count.ToString());
                 Check("первая — «Инженер ПТО! Не ПТО, а хуй в пальто!»", all.Count > 0 && all[0] == "Инженер ПТО! Не ПТО, а хуй в пальто!");
                 Check("комментарии (#) гусь не говорит", all.All(p => !p.StartsWith("#")));
 
@@ -32,21 +32,21 @@ namespace Tests
                 string file = Path.Combine(dir, PhraseBook.FileName);
                 byte[] head = File.ReadAllBytes(file).Take(3).ToArray();
                 Check("Фразы.txt создаётся рядом с модом (UTF-8 с BOM, для Блокнота)", File.Exists(file) && head.SequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF }));
-                Check("в файле те же 50 фраз", book.Count == 50, book.Count.ToString());
+                Check("в файле те же 80 фраз", book.Count == 80, book.Count.ToString());
 
                 HashSet<string> round = new HashSet<string>();
                 string prev = null;
                 bool noDouble = true, peekOk = true;
-                for (int i = 0; i < 150; i++)
+                for (int i = 0; i < 240; i++)
                 {
                     string peek = book.Peek();
                     string p = book.Next();
                     if (peek != p) peekOk = false;
                     if (p == prev) noDouble = false;
                     prev = p;
-                    if (i < 50) round.Add(p);
+                    if (i < 80) round.Add(p);
                 }
-                Check("по кругу: за 50 раз — все 50 разных", round.Count == 50, round.Count.ToString());
+                Check("по кругу: за 80 раз — все 80 разных", round.Count == 80, round.Count.ToString());
                 Check("одна и та же два раза подряд — никогда (и на стыке кругов)", noDouble);
                 Check("«следующая» заранее совпадает с той, что будет сказана", peekOk);
 
