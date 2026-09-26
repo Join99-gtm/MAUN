@@ -46,6 +46,10 @@ namespace GooseDeluxe
         private int leafClicks;
         private readonly GooseForms forms = new GooseForms();
         private int russianMemes;
+        private float escProgress;
+        private static FieldInfo gooseEscCounter;
+        private static bool gooseEscCounterLooked;
+        private static readonly Font EscFont = new Font("Segoe UI", 11f, FontStyle.Bold);
         private static readonly Brush LeafHitBrush = new SolidBrush(Color.FromArgb(1, 0, 0, 0));
         private Season season = Season.None;
         private bool newYear;
@@ -231,7 +235,61 @@ namespace GooseDeluxe
         // runs before the Autumn mod draws its piles, whichever mod was loaded first
         private void OnPreRender(GooseEntity goose, Graphics unused)
         {
-            if (hooked && !failed) SuppressLeaves();
+            if (hooked && !failed)
+            {
+                SuppressLeaves();
+                HoldGooseEscCounter();
+            }
+        }
+
+        /// <summary>
+        /// The goose quits after ESC is held for about 8 s, with an English banner ("Continue holding ESC to
+        /// evict goose"). We quit after cfg.EscHoldSeconds with a Russian one, so its counter is kept at zero.
+        /// </summary>
+        private static void HoldGooseEscCounter()
+        {
+            if (!gooseEscCounterLooked)
+            {
+                gooseEscCounterLooked = true;
+                try
+                {
+                    Assembly exe = Assembly.GetEntryAssembly();
+                    Type t = exe == null ? null : exe.GetType("GooseDesktop.Refactor.EscToQuitOverlay", false);
+                    gooseEscCounter = t == null ? null : t.GetField("curQuitAlpha", BindingFlags.NonPublic | BindingFlags.Static);
+                    if (gooseEscCounter == null) Deluxe.Log("the goose's ESC counter not found; its own ESC countdown stays");
+                }
+                catch (Exception ex) { Deluxe.Log("ESC counter: " + ex.Message); }
+            }
+            if (gooseEscCounter == null) return;
+            try { gooseEscCounter.SetValue(null, 0f); }
+            catch { gooseEscCounter = null; }
+        }
+
+        /// <summary>ESC held long enough to send the goose away? Never while something runs fullscreen: games use ESC.</summary>
+        private bool EscHeldLongEnough()
+        {
+            if (Deluxe.HiddenForFullscreen) { escSince = -1; escProgress = 0f; return false; }
+            double now = clock.Elapsed.TotalSeconds;
+            if ((GetAsyncKeyState(0x1B) & 0x8000) != 0)
+            {
+                if (escSince < 0) escSince = now;
+                escProgress = (float)((now - escSince) / Math.Max(0.3f, cfg.EscHoldSeconds));
+                return escProgress >= 1f;
+            }
+            escSince = -1;
+            escProgress = 0f;
+            return false;
+        }
+
+        private static void DrawEscBar(Graphics g, float progress)
+        {
+            const string text = "Держи ESC — гусь уходит…";
+            SizeF size = g.MeasureString(text, EscFont);
+            Rectangle box = new Rectangle(10, 10, (int)size.Width + 24, (int)size.Height + 14);
+            using (Brush back = new SolidBrush(Color.FromArgb(235, 173, 216, 230))) g.FillRectangle(back, box);
+            using (Brush fill = new SolidBrush(Color.FromArgb(235, 255, 182, 193)))
+                g.FillRectangle(fill, box.X, box.Y, (int)(box.Width * Math.Min(1f, progress)), box.Height);
+            g.DrawString(text, EscFont, Brushes.Black, box.X + 12, box.Y + 7);
         }
 
         private void OnPostTick(GooseEntity goose)
@@ -251,6 +309,7 @@ namespace GooseDeluxe
         private void OnPostRender(GooseEntity goose, Graphics unused)
         {
             if (!hooked || failed) return;
+            if (EscHeldLongEnough()) { Exit(); return; }
             try
             {
                 float now = Time.time;
@@ -315,6 +374,7 @@ namespace GooseDeluxe
                     particles.Update(dt, now);
                     particles.Draw(g, now);
                     winter.DrawAir(g);
+                    if (escProgress > 0.03f) DrawEscBar(g, escProgress);
                 }
             }
             overlay.Present();
@@ -371,19 +431,11 @@ namespace GooseDeluxe
             // while frozen the goose doesn't paint, so a sleeping goose is animated from here
             if (Engine.Frozen && Deluxe.Sleeping && !Deluxe.HiddenForFullscreen)
             {
-                // the goose's own "hold ESC to quit" is frozen too; keep it working (not during fullscreen
-                // games though, where ESC is often held to skip a cutscene)
-                double now = clock.Elapsed.TotalSeconds;
-                if ((GetAsyncKeyState(0x1B) & 0x8000) != 0)
-                {
-                    if (escSince < 0) escSince = now;
-                    else if (now - escSince > 3) { Exit(); return; }
-                }
-                else escSince = -1;
+                // no goose frames while it sleeps: holding ESC to send it away is checked from here
+                if (EscHeldLongEnough()) { Exit(); return; }
                 Time.TickTime();
                 DrawFrame(0.1f, Time.time);
             }
-            else escSince = -1;
         }
 
         private void CheckFullscreen()
