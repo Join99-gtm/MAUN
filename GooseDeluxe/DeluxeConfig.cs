@@ -49,6 +49,7 @@ namespace GooseDeluxe
         // clicks and variety (0.5)
         public bool ClickLeafPiles = true;
         public bool NoRepeats = true;
+        public bool RussianMemes = true;
 
         // friends (0.2)
         public bool Friends = true;
@@ -62,7 +63,7 @@ namespace GooseDeluxe
             "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes",
             "Friends", "FriendCanStealMouse", "NtfyServer",
             "Seasons", "WinterScarf", "NewYearHat",
-            "ClickLeafPiles", "NoRepeats",
+            "ClickLeafPiles", "NoRepeats", "RussianMemes",
         };
 
         public static DeluxeConfig Load(string path)
@@ -114,6 +115,7 @@ namespace GooseDeluxe
             c.NewYearHat = GetBool(kv, "NewYearHat", c.NewYearHat);
             c.ClickLeafPiles = GetBool(kv, "ClickLeafPiles", c.ClickLeafPiles);
             c.NoRepeats = GetBool(kv, "NoRepeats", c.NoRepeats);
+            c.RussianMemes = GetBool(kv, "RussianMemes", c.RussianMemes);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -179,6 +181,7 @@ namespace GooseDeluxe
             add("NewYearHat", B(NewYearHat), "Новогодняя шапка с 20 декабря по 10 января (если своя шляпа не выбрана)");
             add("ClickLeafPiles", B(ClickLeafPiles), "Кучи листьев разлетаются от клика мышкой");
             add("NoRepeats", B(NoRepeats), "Мемы и записки гуся по кругу, без повторов");
+            add("RussianMemes", B(RussianMemes), "Надписи на мемах гуся по-русски (оригиналы лежат в Assets\\Images\\Memes\\en)");
             return sb.ToString();
         }
 

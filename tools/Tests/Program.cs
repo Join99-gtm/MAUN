@@ -40,6 +40,7 @@ namespace Tests
             Run("Мемы и записки без повторов, клик по куче листьев", TestNoRepeatsAndLeafHit);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
+            if (gooseDir != null) Run("Мемы по-русски (настоящие мемы гуся)", () => TestRussianMemes(gooseDir));
             else Console.WriteLine("(skipping Autumn mod test: pass the goose folder as the 2nd argument)");
             string mock = args.Length > 0 ? args[0] : null;
             if (mock != null) Run("ntfy end-to-end (mock server)", () => NetTests.Run(mock, Check));
@@ -550,6 +551,69 @@ namespace Tests
             List<AutumnControl.Pile> list = ctl.Piles();
             Check("список куч видит разбросанную кучу", list.Count == 1 && list[0].Kicked && Math.Abs(list[0].Rad - 40f) < 0.01f);
             piles.Clear();
+        }
+
+        private static string Sha(string path)
+        {
+            using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(path)));
+        }
+
+        private static void TestRussianMemes(string gooseDir)
+        {
+            string src = Path.Combine(gooseDir, "Assets", "Images", "Memes");
+            string root = Path.Combine(Tmp, "meme-goose");
+            string dir = Path.Combine(root, "Assets", "Images", "Memes");
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+            Directory.CreateDirectory(dir);
+            Dictionary<string, string> before = new Dictionary<string, string>();
+            foreach (string f in Directory.GetFiles(src)) { File.Copy(f, Path.Combine(dir, Path.GetFileName(f))); before[Path.GetFileName(f)] = Sha(f); }
+            File.WriteAllBytes(Path.Combine(dir, "мой мем.png"), File.ReadAllBytes(Path.Combine(src, "Meme4.png")));
+
+            System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
+            int done = MemeTranslator.Apply(root, true);
+            sw.Stop();
+            Check("переведены все 6 мемов с надписями", done == 6, done.ToString());
+            Check("перевод занимает меньше 3 секунд", sw.ElapsedMilliseconds < 3000, sw.ElapsedMilliseconds + " мс");
+            string en = Path.Combine(dir, "en");
+            Check("оригиналы лежат в Memes/en и не изменены", Directory.GetFiles(en).Length == 6 &&
+                  Directory.GetFiles(en).All(f => Sha(f) == before[Path.GetFileName(f)]));
+            Check("мемы без надписей и свои картинки не тронуты", Sha(Path.Combine(dir, "Meme4.png")) == before["Meme4.png"] &&
+                  Sha(Path.Combine(dir, "GooseDance.gif")) == before["GooseDance.gif"] && File.Exists(Path.Combine(dir, "мой мем.png")));
+            Check("в папке мемов гуся только картинки (гусь берёт любой файл оттуда)",
+                  Directory.GetFiles(dir).All(f => f.EndsWith(".png") || f.EndsWith(".gif")));
+
+            foreach (MemeTranslator.Meme m in MemeTranslator.Memes)
+            {
+                using (System.Drawing.Bitmap ru = new System.Drawing.Bitmap(Path.Combine(dir, m.File)))
+                using (System.Drawing.Bitmap orig = new System.Drawing.Bitmap(Path.Combine(en, m.File)))
+                {
+                    int changedInside = 0, changedOutside = 0, inside = 0, outside = 0;
+                    for (int y = 0; y < ru.Height; y += 3)
+                        for (int x = 0; x < ru.Width; x += 3)
+                        {
+                            bool inPatch = m.Patches.Any(p => Math.Abs(x - (p.TX > 0 ? p.TX : p.X)) < Math.Max(p.W, p.TW) / 2 + 8 &&
+                                                              Math.Abs(y - (p.TY > 0 ? p.TY : p.Y)) < Math.Max(p.H, p.TH) / 2 + 30);
+                            bool diff = ru.GetPixel(x, y).ToArgb() != orig.GetPixel(x, y).ToArgb();
+                            if (inPatch) { inside++; if (diff) changedInside++; } else { outside++; if (diff) changedOutside++; }
+                        }
+                    Check(m.File + ": надписи заменены, остальная картинка та же",
+                          ru.Width == m.Width && ru.Height == m.Height && changedInside > inside / 50 && changedOutside == 0,
+                          "изменено внутри " + changedInside + "/" + inside + ", снаружи " + changedOutside);
+                }
+            }
+            string preview = Path.Combine(Tmp, "memes-ru");
+            Directory.CreateDirectory(preview);
+            foreach (MemeTranslator.Meme m in MemeTranslator.Memes) File.Copy(Path.Combine(dir, m.File), Path.Combine(preview, m.File), true);
+            Console.WriteLine("   (русские мемы для просмотра: " + preview + ")");
+
+            string ru1 = Sha(Path.Combine(dir, "Meme1.png"));
+            Check("повторный запуск ничего не портит", MemeTranslator.Apply(root, true) == 6 && Sha(Path.Combine(dir, "Meme1.png")) == ru1 &&
+                  Directory.GetFiles(en).Length == 6);
+            File.Delete(Path.Combine(dir, "Meme5.png"));
+            Check("пропавший русский мем делается заново из оригинала", MemeTranslator.Apply(root, true) == 6 && File.Exists(Path.Combine(dir, "Meme5.png")));
+            Check("выключить — вернутся английские оригиналы", MemeTranslator.Apply(root, false) == 0 && !Directory.Exists(en) &&
+                  before.All(kv => Sha(Path.Combine(dir, kv.Key)) == kv.Value));
         }
 
         private static void TestNoRepeatsAndLeafHit()

@@ -267,6 +267,7 @@ namespace GooseDeluxe
                 () => Math.Max(0, Array.IndexOf(SeasonValues, cfg.Seasons)), i => { cfg.Seasons = SeasonValues[i]; c.ApplyConfig("Seasons"); }));
             TableLayoutPanel langChecks = Grid(1);
             langChecks.Controls.Add(Setting("Русские записки в блокноте гуся", "RussianNotes"));
+            langChecks.Controls.Add(Setting("Надписи на мемах по-русски", "RussianMemes"));
             lang.Controls.Add(langChecks);
 
             // --- friends

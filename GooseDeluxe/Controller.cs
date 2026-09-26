@@ -45,6 +45,7 @@ namespace GooseDeluxe
         private bool leafClicksBroken;
         private int leafClicks;
         private readonly GooseForms forms = new GooseForms();
+        private int russianMemes;
         private static readonly Brush LeafHitBrush = new SolidBrush(Color.FromArgb(1, 0, 0, 0));
         private Season season = Season.None;
         private bool newYear;
@@ -102,6 +103,8 @@ namespace GooseDeluxe
 
             try { RussianPack.Apply(Deluxe.GooseDir, cfg.RussianNotes); }
             catch (Exception ex) { Deluxe.Log("Russian pack: " + ex.Message); }
+            try { russianMemes = MemeTranslator.Apply(Deluxe.GooseDir, cfg.RussianMemes); }
+            catch (Exception ex) { Deluxe.Log("Russian memes: " + ex.Message); }
 
             winter = new WinterScene();
             Deluxe.Winter = winter;
@@ -854,6 +857,9 @@ namespace GooseDeluxe
                 case "RussianNotes":
                     RussianPack.Apply(Deluxe.GooseDir, cfg.RussianNotes);
                     break;
+                case "RussianMemes":
+                    russianMemes = MemeTranslator.Apply(Deluxe.GooseDir, cfg.RussianMemes);
+                    break;
                 case "Seasons":
                 case "NewYearHat":
                     UpdateSeason();
@@ -971,6 +977,10 @@ namespace GooseDeluxe
             catch { }
             if (!cfg.RussianNotes) add(DiagLevel.Info, "Русские записки", "выключены");
             else add(ru > 0 ? DiagLevel.Ok : DiagLevel.Warn, "Русские записки", ru > 0 ? ru + " записок в блокноте гуся" : "не нашёл папку с записками гуся");
+            if (!cfg.RussianMemes) add(DiagLevel.Info, "Мемы по-русски", "выключено — у мемов английские надписи");
+            else add(russianMemes > 0 ? DiagLevel.Ok : DiagLevel.Warn, "Мемы по-русски",
+                     russianMemes > 0 ? "переведено мемов: " + russianMemes + " из " + MemeTranslator.Memes.Length + " (оригиналы — в папке Memes\\en)"
+                                      : "не нашёл мемов гуся, которые умею переводить");
             if (!cfg.NoRepeats) add(DiagLevel.Info, "Мемы и записки без повторов", "выключено в настройках");
             else add(DiagLevel.Ok, "Мемы и записки без повторов", "по кругу, без повторов подряд. Принесено мемов: " + forms.MemesShown + ", записок: " + forms.NotesShown +
                      (forms.LastMeme != null ? ". Последний мем: " + Path.GetFileName(forms.LastMeme) : "") +
