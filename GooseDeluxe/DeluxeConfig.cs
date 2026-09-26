@@ -59,6 +59,8 @@ namespace GooseDeluxe
         public bool DriftMusic = true;
         public float DriftMusicFrom = 20f;
         public float DriftMusicTo = 25f;
+        public bool RandomChase = true;
+        public float RandomChaseMinutes = 6f;
 
         // friends (0.2)
         public bool Friends = true;
@@ -74,6 +76,7 @@ namespace GooseDeluxe
             "Seasons", "WinterScarf", "NewYearHat",
             "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds", "LeafPiles",
             "DriftSmoke", "DriftSound", "DriftMusic", "DriftMusicFrom", "DriftMusicTo",
+            "RandomChase", "RandomChaseMinutes",
         };
 
         public static DeluxeConfig Load(string path)
@@ -133,6 +136,8 @@ namespace GooseDeluxe
             c.DriftMusic = GetBool(kv, "DriftMusic", c.DriftMusic);
             c.DriftMusicFrom = Clamp(GetFloat(kv, "DriftMusicFrom", c.DriftMusicFrom), 0f, 3600f);
             c.DriftMusicTo = Clamp(GetFloat(kv, "DriftMusicTo", c.DriftMusicTo), c.DriftMusicFrom + 1f, 3601f);
+            c.RandomChase = GetBool(kv, "RandomChase", c.RandomChase);
+            c.RandomChaseMinutes = Clamp(GetFloat(kv, "RandomChaseMinutes", c.RandomChaseMinutes), 1f, 120f);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -204,6 +209,8 @@ namespace GooseDeluxe
             add("DriftMusic", B(DriftMusic), "Дрифт: фонк. Свой трек положи в папку Фонк рядом с модом, иначе играет встроенный бит");
             add("DriftMusicFrom", DriftMusicFrom.ToString(CultureInfo.InvariantCulture), "С какой секунды играть свой трек");
             add("DriftMusicTo", DriftMusicTo.ToString(CultureInfo.InvariantCulture), "До какой секунды");
+            add("RandomChase", B(RandomChase), "Иногда гусь сам ни с того ни с сего гоняется за курсором");
+            add("RandomChaseMinutes", RandomChaseMinutes.ToString(CultureInfo.InvariantCulture), "Примерно раз во столько минут (1 - 120)");
             add("LeafPiles", B(LeafPiles), "Кучи листьев осеннего мода (False — их не будет совсем)");
             add("RussianMemes", B(RussianMemes), "Надписи на мемах гуся по-русски (оригиналы лежат в Assets\\Images\\Memes\\en)");
             return sb.ToString();

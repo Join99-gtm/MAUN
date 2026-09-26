@@ -124,6 +124,7 @@ namespace GooseDeluxe
             main.Controls.Add(Btn("Украсть курсор", () => c.RunGooseTask("NabMouse")));
             main.Controls.Add(Btn("Убрать листья", c.SweepLeaves));
             main.Controls.Add(Btn("Папка мемов (добавить свои)", c.OpenMemesFolder));
+            main.Controls.Add(Btn("Погнаться за курсором", c.ChaseCursor));
             main.Controls.Add(Btn("Тест дрифта (дым и фонк)", c.TestDrift));
             main.Controls.Add(Btn("Папка фонка (свой трек)", c.OpenPhonkFolder));
             pauseButton = Btn("Пауза  (Ctrl+Alt+P)", c.TogglePause);
@@ -254,6 +255,7 @@ namespace GooseDeluxe
             behave.Controls.Add(Setting("Кучи листьев осенью", "LeafPiles"));
             behave.Controls.Add(Setting("Визг шин в заносе", "DriftSound"));
             behave.Controls.Add(Setting("Фонк в заносе", "DriftMusic"));
+            behave.Controls.Add(Setting("Иногда сам гоняется за курсором", "RandomChase"));
 
             // --- animation
             TableLayoutPanel anim = Grid(2);

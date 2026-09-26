@@ -6,7 +6,7 @@ namespace GooseDeluxe
 {
     /// <summary>
     /// The drift's sounds, made from scratch (nothing is copied from anywhere): a tyre squeal that loops,
-    /// and a short phonk-style beat — cowbell melody, 808 bass, kick, clap and hats. Both come out as WAV
+    /// and four bars of drift phonk — a cowbell hook, a sliding 808, kick, clap, hats, pumping and a little room. Both come out as WAV
     /// files the goose's own way of playing sounds (MCI) can loop.
     /// </summary>
     internal static class DriftSynth
@@ -40,124 +40,195 @@ namespace GooseDeluxe
 
         // ------------------------------------------------------------------ phonk
 
+        public const int MusicRate = 44100;
         private const double Bpm = 130;
 
-        /// <summary>Two bars of a drift-phonk groove (about 3.7 s); played in a loop while the goose drifts.</summary>
+        // the riff: a two-bar cowbell hook in D minor, semitones from D5 (-99 = rest), played twice over the four bars
+        private static readonly int[] Riff =
+        {
+            0,-99,0,0, -99,3,-99,0, -99,7,-99,5, 3,-99,2,-99,
+            0,-99,0,0, -99,3,-99,0, -99,10,-99,7, 5,-99,3,2,
+        };
+        // the 808 underneath, one chord per bar: Dm, B♭, C, A — from D2
+        private static readonly int[] BassRoots = { 0, -4, -2, -5 };
+
+        /// <summary>Four bars of drift phonk at 130 BPM (about 7.4 s), seamless when looped.</summary>
         public static float[] Phonk()
         {
-            double step = 60.0 / Bpm / 4; // a 16th note
-            const int steps = 32;
-            int n = (int)(Rate * step * steps);
-            float[] mix = new float[n + Rate];
+            int rate = MusicRate;
+            double step = 60.0 / Bpm / 4;          // a 16th note
+            int bar = (int)Math.Round(step * 16 * rate), loop = bar * 4;
+            // render the four bars twice and keep the second pass: tails and echoes of the end run into the start
+            int total = loop * 2 + rate;
+            float[] drums = new float[total], bell = new float[total], bass = new float[total], wet = new float[total];
+            float[] duck = new float[total];
+            for (int i = 0; i < total; i++) duck[i] = 1f;
+            Random rnd = new Random(20);
 
-            int[] kick  = { 1,0,0,0, 0,0,0,1, 0,0,1,0, 0,0,0,0 };
-            int[] clap  = { 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0 };
-            int[] hat   = { 1,0,1,0, 1,0,1,1, 1,0,1,0, 1,1,1,0 };
-            // cowbell: semitones from C#5, -99 = rest
-            int[] bell  = { 0,-99,3,-99, 0,7,-99,5, 3,-99,0,-99, -2,-99,0,-99,
-                            0,-99,3,-99, 0,7,-99,10, 8,-99,7,-99, 5,-99,3,-99 };
-            int[] bassRoot = { 0, -4 }; // C# then A, one per bar
-
-            Random rnd = new Random(11);
-            for (int s = 0; s < steps; s++)
-            {
-                int at = (int)(s * step * Rate);
-                int inBar = s % 16;
-                if (kick[inBar] == 1)
+            for (int pass = 0; pass < 2; pass++)
+                for (int b = 0; b < 4; b++)
                 {
-                    Kick(mix, at);
-                    int next = s + 1;
-                    while (next < steps && kick[next % 16] == 0) next++;
-                    Bass(mix, at, (int)((next - s) * step * Rate), 69.30 * Semi(bassRoot[s / 16]));
+                    int barStart = pass * loop + b * bar;
+                    for (int s = 0; s < 16; s++)
+                    {
+                        int at = barStart + (int)Math.Round(s * step * rate);
+                        if (s == 0 || s == 10 || (b == 3 && s == 7)) { Kick(drums, at, rate); Duck(duck, at, rate); }
+                        if (s == 4 || s == 12) Clap(drums, wet, at, rate, rnd);
+                        if (s % 2 == 0) Hat(drums, at, rate, rnd, s % 4 == 2 ? 0.2f : 0.13f, 0.022);
+                        if ((b == 1 || b == 3) && s >= 14) Hat(drums, at + (int)(step * rate / 2), rate, rnd, 0.12f, 0.018); // 32nd roll
+                        if ((b == 0 || b == 2) && s == 6) Hat(drums, at, rate, rnd, 0.12f, 0.16);                         // open hat
+                        int note = Riff[(b % 2) * 16 + s];
+                        if (note != -99) Cowbell(bell, wet, at, rate, 587.33 * Semi(note));
+                    }
+                    // the 808: the bar's root, sliding into the next bar's root on the last 16th
+                    double from = 73.42 * Semi(BassRoots[b]), to = 73.42 * Semi(BassRoots[(b + 1) % 4]);
+                    Bass808(bass, barStart, bar, rate, from, to, step);
                 }
-                if (clap[inBar] == 1) Clap(mix, at, rnd);
-                if (hat[inBar] == 1) Hat(mix, at, rnd, inBar % 4 == 2 ? 0.55f : 0.35f);
-                if (bell[s] != -99) Cowbell(mix, at, 554.37 * Semi(bell[s]));
-            }
-            // the tails of the last hits wrap round to the start, so the loop is seamless
-            float[] o = new float[n];
-            for (int i = 0; i < mix.Length; i++) o[i % n] += mix[i];
-            // a bit of grit and a soft top, like an old tape
-            double lp = 0;
-            for (int i = 0; i < n; i++)
+
+            Reverb(wet, rate);
+            float[] o = new float[loop];
+            for (int i = 0; i < loop; i++)
             {
-                double x = Math.Tanh(o[i] * 1.6);
-                lp += (x - lp) * 0.55;
-                o[i] = (float)lp;
+                int k = loop + i;
+                double x = drums[k] + (bell[k] * 0.85 + bass[k]) * duck[k] + wet[k] * 0.32;
+                o[i] = (float)Math.Tanh(x * 1.25); // glue: a soft limiter
             }
-            return Normalize(o, 0.85f);
+            return Normalize(o, 0.9f);
         }
 
         private static double Semi(int k) { return Math.Pow(2, k / 12.0); }
 
-        private static void Kick(float[] mix, int at)
+        /// <summary>The 808 cowbell: two band-limited square waves about a fifth apart (540/800 Hz on the
+        /// original, pitched here), a sharp click and a ringing tail, some of it into the echo.</summary>
+        private static void Cowbell(float[] dry, float[] wet, int at, int rate, double f)
         {
-            int len = (int)(0.35 * Rate);
+            int len = (int)(0.42 * rate);
+            double f2 = f * 1.4815;
+            Biquad bp = Biquad.BandPass(rate, f * 1.7, 1.3);
+            for (int i = 0; i < len && at + i < dry.Length; i++)
+            {
+                double t = (double)i / rate;
+                double sq = Square(f, t, rate) + Square(f2, t, rate);
+                double body = bp.Process(sq) * 1.6 + sq * 0.18;
+                double env = Math.Exp(-t / 0.011) * 0.6 + Math.Exp(-t / 0.13) * 0.4;
+                double v = Math.Tanh(body * env * 1.4) * 0.42;
+                dry[at + i] += (float)v;
+                wet[at + i] += (float)(v * 0.5);
+            }
+        }
+
+        /// <summary>A square wave built from its odd harmonics up to the Nyquist limit: no aliasing hiss.</summary>
+        private static double Square(double f, double t, int rate)
+        {
+            double sum = 0;
+            for (int k = 1; k * f < rate * 0.45; k += 2) sum += Math.Sin(2 * Math.PI * k * f * t) / k;
+            return sum * 4 / Math.PI;
+        }
+
+        private static void Kick(float[] mix, int at, int rate)
+        {
+            int len = (int)(0.3 * rate);
             double phase = 0;
             for (int i = 0; i < len && at + i < mix.Length; i++)
             {
-                double t = (double)i / Rate;
-                double f = 48 + 110 * Math.Exp(-t / 0.035);
-                phase += 2 * Math.PI * f / Rate;
-                mix[at + i] += (float)(Math.Sin(phase) * Math.Exp(-t / 0.16) * 0.9);
+                double t = (double)i / rate;
+                double f = 50 + 140 * Math.Exp(-t / 0.028);
+                phase += 2 * Math.PI * f / rate;
+                double click = t < 0.002 ? Math.Sin(Math.PI * t / 0.002) * 0.5 : 0; // a knock that starts from silence
+                mix[at + i] += (float)((Math.Sin(phase) * Math.Exp(-t / 0.11) + click) * 0.75);
             }
         }
 
-        private static void Bass(float[] mix, int at, int len, double freq)
+        /// <summary>Everything but the drums dips when the kick hits and swells back: the "pumping" of phonk.</summary>
+        private static void Duck(float[] duck, int at, int rate)
         {
-            len = Math.Min(len + (int)(0.05 * Rate), (int)(1.2 * Rate));
+            int len = (int)(0.22 * rate);
+            for (int i = 0; i < len && at + i < duck.Length; i++)
+            {
+                double t = (double)i / rate;
+                duck[at + i] = (float)Math.Min(duck[at + i], 1 - 0.55 * (1 - Math.Exp(-t / 0.0015)) * Math.Exp(-t / 0.07)); // dips fast, not instantly: no click
+            }
+        }
+
+        /// <summary>A long, distorted 808 on the root that slides into the next root at the end of the bar.</summary>
+        private static void Bass808(float[] mix, int at, int len, int rate, double from, double to, double step)
+        {
             double phase = 0;
+            int slideAt = len - (int)(step * rate);
             for (int i = 0; i < len && at + i < mix.Length; i++)
             {
-                double t = (double)i / Rate;
-                double f = freq * (1 + 0.5 * Math.Exp(-t / 0.02)); // a little 808 "boing" at the start
-                phase += 2 * Math.PI * f / Rate;
-                double env = Math.Min(1, t / 0.005) * Math.Exp(-t / 0.7) * Math.Min(1, (len - i) / (0.02 * Rate));
-                mix[at + i] += (float)(Math.Tanh(Math.Sin(phase) * 2.5) * env * 0.45);
+                double t = (double)i / rate;
+                double f = from * (1 + 0.35 * Math.Exp(-t / 0.03));          // the punchy start
+                if (i > slideAt)
+                {
+                    double k = (double)(i - slideAt) / (len - slideAt);
+                    f = from * Math.Pow(to / from, k * k);                     // glide into the next note
+                }
+                phase += 2 * Math.PI * f / rate;
+                double env = Math.Min(1, t / 0.004) * Math.Min(1, (len - i) / (0.004 * rate)) * (0.55 + 0.45 * Math.Exp(-t / 0.9)); // no click where the next 808 takes over
+                // distortion adds the overtones that make an 808 audible on laptop speakers
+                mix[at + i] += (float)(Math.Tanh(Math.Sin(phase) * 3.0) * env * 0.42);
             }
         }
 
-        private static void Clap(float[] mix, int at, Random rnd)
+        private static void Clap(float[] dry, float[] wet, int at, int rate, Random rnd)
         {
-            int len = (int)(0.22 * Rate);
-            Biquad bp = Biquad.BandPass(Rate, 1500, 0.9);
-            for (int i = 0; i < len && at + i < mix.Length; i++)
+            int len = (int)(0.25 * rate);
+            Biquad bp = Biquad.BandPass(rate, 1300, 0.7);
+            for (int i = 0; i < len && at + i < dry.Length; i++)
             {
-                double t = (double)i / Rate;
-                // three quick claps and a tail, like hands a few centimetres apart
-                double env = Math.Exp(-(t % 0.011) / 0.004) * (t < 0.033 ? 1 : 0) + Math.Exp(-t / 0.09) * 0.8;
-                mix[at + i] += (float)(bp.Process(rnd.NextDouble() * 2 - 1) * env * 0.75);
+                double t = (double)i / rate;
+                double env = (t < 0.03 ? Math.Exp(-(t % 0.01) / 0.003) : 0) + Math.Exp(-t / 0.08) * 0.75;
+                double v = bp.Process(rnd.NextDouble() * 2 - 1) * Math.Min(1, t / 0.0004) * env * 0.85;
+                dry[at + i] += (float)v;
+                wet[at + i] += (float)(v * 0.6);
             }
         }
 
-        private static void Hat(float[] mix, int at, Random rnd, float level)
+        private static void Hat(float[] mix, int at, int rate, Random rnd, float level, double decay)
         {
-            int len = (int)(0.06 * Rate);
-            double prev = 0;
+            int len = (int)(Math.Min(0.3, decay * 6) * rate);
+            Biquad hp = Biquad.HighPass(rate, 7500, 0.7);
             for (int i = 0; i < len && at + i < mix.Length; i++)
             {
-                double t = (double)i / Rate;
-                double w = rnd.NextDouble() * 2 - 1;
-                double hp = w - prev; // crude high-pass: only the fizz is left
-                prev = w;
-                mix[at + i] += (float)(hp * Math.Exp(-t / 0.018) * level * 0.5);
+                double t = (double)i / rate;
+                mix[at + i] += (float)(hp.Process(rnd.NextDouble() * 2 - 1) * Math.Min(1, t / 0.0004) * Math.Exp(-t / decay) * level);
             }
         }
 
-        private static void Cowbell(float[] mix, int at, double freq)
+        /// <summary>A small room (Schroeder: four combs, two all-passes), in place.</summary>
+        private static void Reverb(float[] x, int rate)
         {
-            // the 808 cowbell: two square waves a fifth-ish apart through a band-pass, dying fast
-            int len = (int)(0.32 * Rate);
-            Biquad bp = Biquad.BandPass(Rate, freq * 1.25, 2.5);
-            double p1 = 0, p2 = 0, f2 = freq * 1.4829;
-            for (int i = 0; i < len && at + i < mix.Length; i++)
+            double[] combMs = { 29.7, 37.1, 41.1, 43.7 };
+            float[] outp = new float[x.Length];
+            foreach (double ms in combMs)
             {
-                double t = (double)i / Rate;
-                p1 += freq / Rate; p2 += f2 / Rate;
-                double sq = (p1 % 1 < 0.5 ? 1 : -1) + (p2 % 1 < 0.5 ? 1 : -1);
-                double env = Math.Exp(-t / 0.035) * 0.6 + Math.Exp(-t / 0.16) * 0.4;
-                mix[at + i] += (float)(bp.Process(sq) * env * 0.5);
+                int d = (int)(ms * rate / 1000);
+                float[] buf = new float[d];
+                int p = 0;
+                for (int i = 0; i < x.Length; i++)
+                {
+                    float y = buf[p];
+                    buf[p] = x[i] + y * 0.8f;
+                    p = (p + 1) % d;
+                    outp[i] += y * 0.25f;
+                }
             }
+            foreach (double ms in new[] { 5.0, 1.7 })
+            {
+                int d = (int)(ms * rate / 1000);
+                float[] buf = new float[d];
+                int p = 0;
+                for (int i = 0; i < outp.Length; i++)
+                {
+                    float b = buf[p];
+                    float y = -0.7f * outp[i] + b;
+                    buf[p] = outp[i] + 0.7f * y;
+                    p = (p + 1) % d;
+                    outp[i] = y;
+                }
+            }
+            Array.Copy(outp, x, x.Length);
         }
 
         // ------------------------------------------------------------------ helpers
@@ -184,7 +255,9 @@ namespace GooseDeluxe
             return o;
         }
 
-        public static byte[] Wav(float[] samples)
+        public static byte[] Wav(float[] samples) { return Wav(samples, Rate); }
+
+        public static byte[] Wav(float[] samples, int rate)
         {
             using (MemoryStream ms = new MemoryStream())
             using (BinaryWriter w = new BinaryWriter(ms))
@@ -192,7 +265,7 @@ namespace GooseDeluxe
                 int data = samples.Length * 2;
                 w.Write(Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + data); w.Write(Encoding.ASCII.GetBytes("WAVE"));
                 w.Write(Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write((short)1);
-                w.Write(Rate); w.Write(Rate * 2); w.Write((short)2); w.Write((short)16);
+                w.Write(rate); w.Write(rate * 2); w.Write((short)2); w.Write((short)16);
                 w.Write(Encoding.ASCII.GetBytes("data")); w.Write(data);
                 foreach (float s in samples) w.Write((short)Math.Round(Math.Max(-1f, Math.Min(1f, s)) * 32767f));
                 w.Flush();
@@ -201,16 +274,22 @@ namespace GooseDeluxe
         }
 
         /// <summary>Writes the WAV unless an identical one is already there; returns its path.</summary>
-        public static string Ensure(string dir, string name, Func<float[]> make)
+        public static string Ensure(string dir, string name, Func<float[]> make, int rate = Rate)
         {
             string path = Path.Combine(dir, name);
-            if (!File.Exists(path)) File.WriteAllBytes(path, Wav(make()));
+            if (!File.Exists(path)) File.WriteAllBytes(path, Wav(make(), rate));
             return path;
         }
 
         private sealed class Biquad
         {
             private double b0, b1, b2, a1, a2, x1, x2, y1, y2;
+
+            public static Biquad HighPass(int rate, double freq, double q)
+            {
+                double w = 2 * Math.PI * freq / rate, alpha = Math.Sin(w) / (2 * q), a0 = 1 + alpha, c = Math.Cos(w);
+                return new Biquad { b0 = (1 + c) / 2 / a0, b1 = -(1 + c) / a0, b2 = (1 + c) / 2 / a0, a1 = -2 * c / a0, a2 = (1 - alpha) / a0 };
+            }
 
             public static Biquad BandPass(int rate, double freq, double q)
             {

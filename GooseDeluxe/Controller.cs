@@ -47,6 +47,7 @@ namespace GooseDeluxe
         private readonly GooseForms forms = new GooseForms();
         private int russianMemes;
         private DriftAudio driftAudio;
+        private readonly RandomChase randomChase = new RandomChase();
         private float escProgress;
         private bool leftDown;
         private Vector2 leftDownAt;
@@ -446,6 +447,9 @@ namespace GooseDeluxe
             if (poller != null)
                 foreach (char key in poller.Poll(HotkeyLetters)) OnHotkey(key, "опрос клавиатуры");
             MaybeWelcome();
+            if (cfg.RandomChase && !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen && Deluxe.IsCurrentTask("Wander") &&
+                randomChase.Due(clock.Elapsed.TotalSeconds, cfg.RandomChaseMinutes))
+                Deluxe.SetTask(ChaseCursorTask.Id, true);
             if (driftAudio != null)
                 driftAudio.Update(animator.DriftAmount, !GooseSettings.SilenceSounds && !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen,
                                   cfg, clock.Elapsed.TotalSeconds);
@@ -1089,6 +1093,10 @@ namespace GooseDeluxe
             if (driftAudio != null && driftAudio.LastError != null) add(DiagLevel.Warn, "Дрифт", driftParts + ". Звук не заиграл: " + driftAudio.LastError);
             else add(DiagLevel.Ok, "Дрифт", driftParts + (GooseSettings.SilenceSounds ? " (звук гуся выключен — будет тихо)" : "") +
                      ". Сейчас занос: " + (animator.DriftAmount * 100).ToString("0") + "%. Проверить — кнопка «Тест дрифта» на вкладке «Пульт»");
+            if (!cfg.RandomChase) add(DiagLevel.Info, "Погоня за курсором", "сам не гоняется (выключено в настройках)");
+            else add(DiagLevel.Ok, "Погоня за курсором", "примерно раз в " + cfg.RandomChaseMinutes.ToString("0.#") + " мин" +
+                     (randomChase.NextAt > 0 ? ", следующая через " + Math.Max(0, (randomChase.NextAt - now) / 60).ToString("0.#") + " мин" : "") +
+                     ". Сразу — «Погнаться за курсором» в пульте или в меню");
             if (!cfg.NoRepeats) add(DiagLevel.Info, "Мемы и записки без повторов", "выключено в настройках");
             else add(DiagLevel.Ok, "Мемы и записки без повторов", "по кругу, без повторов подряд. Принесено мемов: " + forms.MemesShown + ", записок: " + forms.NotesShown +
                      (forms.LastMeme != null ? ". Последний мем: " + Path.GetFileName(forms.LastMeme) : "") +
@@ -1168,6 +1176,8 @@ namespace GooseDeluxe
             Directory.CreateDirectory(dir);
             Process.Start("explorer.exe", "\"" + dir + "\"");
         }
+
+        public void ChaseCursor() { Wake(); Deluxe.SetTask(ChaseCursorTask.Id, true); }
 
         public void TestDrift()
         {

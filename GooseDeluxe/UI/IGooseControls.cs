@@ -71,6 +71,8 @@ namespace GooseDeluxe
         void OpenPhonkFolder();
         /// <summary>A few seconds of drift for a check: smoke from the feet, the squeal and the phonk.</summary>
         void TestDrift();
+        /// <summary>The goose chases the mouse cursor for a few seconds (as it now and then does on its own).</summary>
+        void ChaseCursor();
 
         // the goose's own settings (config.ini)
         bool GooseSettingsAvailable { get; }

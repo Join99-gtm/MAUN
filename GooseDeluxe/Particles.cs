@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using SamEngine;
 
@@ -24,7 +25,7 @@ namespace GooseDeluxe
     /// <summary>Dust puffs when charging, feathers when honking/bumped, floating "HONK!" text.</summary>
     internal sealed class ParticleSystem
     {
-        private const int Max = 400;
+        private const int Max = 600;
         private readonly List<Particle> list = new List<Particle>();
         private static readonly Font textFont = new Font("Arial", 11f, FontStyle.Bold);
         private static readonly Color dustColor = Color.FromArgb(150, 140, 120);
@@ -64,8 +65,8 @@ namespace GooseDeluxe
             float speed = Vector2.Magnitude(gooseVel);
             Vector2 back = speed > 1f ? gooseVel * (-M.Rand(0.05f, 0.18f)) : Vector2.zero; // left behind the goose
             p.vel = back + new Vector2(M.Rand(-22f, 22f), M.Rand(-26f, -6f));
-            p.life = M.Rand(0.9f, 1.6f);
-            p.size = M.Rand(5f, 8.5f) * scale * (0.75f + 0.5f * strength);
+            p.life = M.Rand(1.2f, 2.1f);
+            p.size = M.Rand(7f, 12f) * scale * (0.75f + 0.5f * strength);
             p.color = smokeColor;
             p.seed = M.Rand(0f, 6.28f);
             p.born = now;
@@ -184,6 +185,9 @@ namespace GooseDeluxe
         private void Draw(Graphics g, float now, bool smoke)
         {
             if (list.Count == 0) return;
+            // hundreds of big soft puffs: without anti-aliasing they cost a fraction and look the same
+            SmoothingMode oldSmoothing = g.SmoothingMode;
+            if (smoke) g.SmoothingMode = SmoothingMode.HighSpeed;
             TextRenderingHint oldHint = g.TextRenderingHint;
             g.TextRenderingHint = TextRenderingHint.AntiAlias;
             for (int i = 0; i < list.Count; i++)
@@ -221,9 +225,9 @@ namespace GooseDeluxe
                         {
                             float r = p.size * (0.7f + 2.4f * t);
                             float alpha = (t < 0.12f ? t / 0.12f : 1f) * (float)Math.Pow(1f - t, 1.4f);
-                            using (SolidBrush outer = new SolidBrush(M.WithAlpha(p.color, 0.26f * alpha)))
+                            using (SolidBrush outer = new SolidBrush(M.WithAlpha(p.color, 0.34f * alpha)))
                                 g.FillEllipse(outer, p.pos.x - r * 1.35f, p.pos.y - r * 1.1f, r * 2.7f, r * 2.2f);
-                            using (SolidBrush core = new SolidBrush(M.WithAlpha(Color.FromArgb(210, 210, 216), 0.48f * alpha)))
+                            using (SolidBrush core = new SolidBrush(M.WithAlpha(Color.FromArgb(210, 210, 216), 0.6f * alpha)))
                                 g.FillEllipse(core, p.pos.x - r, p.pos.y - r * 0.8f, r * 2f, r * 1.6f);
                             break;
                         }
@@ -267,6 +271,7 @@ namespace GooseDeluxe
                 }
             }
             g.TextRenderingHint = oldHint;
+            g.SmoothingMode = oldSmoothing;
         }
     }
 }

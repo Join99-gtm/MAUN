@@ -29,6 +29,7 @@ namespace GooseDeluxe
             Add(menu.Items, "Принести записку", null, (s, e) => c.RunGooseTask("CollectNotepad"));
             Add(menu.Items, "Наследить грязью", null, (s, e) => c.RunGooseTask("TrackMud"));
             Add(menu.Items, "Украсть курсор", null, (s, e) => c.RunGooseTask("NabMouse"));
+            Add(menu.Items, "Погнаться за курсором", null, (s, e) => c.ChaseCursor());
             Add(menu.Items, "Убрать листья", null, (s, e) => c.SweepLeaves());
             menu.Items.Add(new ToolStripSeparator());
 

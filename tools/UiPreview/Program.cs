@@ -60,6 +60,7 @@ namespace UiPreview
         public void OpenMemesFolder() { Calls.Add("OpenMemesFolder"); }
         public void OpenPhonkFolder() { Calls.Add("OpenPhonkFolder"); }
         public void TestDrift() { Calls.Add("TestDrift"); }
+        public void ChaseCursor() { Calls.Add("ChaseCursor"); }
     }
 
     internal static class Program
@@ -129,7 +130,7 @@ namespace UiPreview
             Console.WriteLine("FAIL friend line empty on open"); fails++;
             friendOk:
             Application.DoEvents();
-            string[] expect = { "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "SweepLeaves", "TestDrift", "Pause True",
+            string[] expect = { "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "SweepLeaves", "ChaseCursor", "TestDrift", "Pause True",
                                 "SendNote", "SendPicture", "Prank Honk", "Prank Meme", "Prank Mud", "Prank Steal", "TestNote", "TestSnow" };
             foreach (Button b in buttons)
             {

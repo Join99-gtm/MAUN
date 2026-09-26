@@ -117,8 +117,8 @@ namespace GooseDeluxe
             if (now < ForceDriftUntil) target = 1f;
             DriftAmount = M.Lerp(DriftAmount, target, Math.Min(1f, dt * (target > DriftAmount ? 10f : 4f)));
 
-            if (!cfg.Particles || !cfg.DriftSmoke || DriftAmount < 0.15f) return;
-            if (now - lastSmokeTime < M.Lerp(0.07f, 0.016f, DriftAmount)) return;
+            if (!cfg.Particles || !cfg.DriftSmoke || DriftAmount < 0.12f) return;
+            if (now - lastSmokeTime < M.Lerp(0.055f, 0.012f, DriftAmount)) return;
             lastSmokeTime = now;
             particles.SpawnSmoke(ScaleAbout(g.rig.feets.lFootPos, g.position, scale), g.velocity, scale, DriftAmount, now);
             particles.SpawnSmoke(ScaleAbout(g.rig.feets.rFootPos, g.position, scale), g.velocity, scale, DriftAmount, now);

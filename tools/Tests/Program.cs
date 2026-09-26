@@ -39,6 +39,7 @@ namespace Tests
             Run("Пульт: горячие клавиши, клик по гусю, сохранение, отчёт", TestPanelLogic);
             Run("Мемы и записки без повторов, клик по куче листьев", TestNoRepeatsAndLeafHit);
             Run("Дрифт: дым из-под лап, визг шин, фонк", TestDrift);
+            Run("Погоня за курсором", TestChase);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
             if (gooseDir != null) Run("Мемы по-русски (настоящие мемы гуся)", () => TestRussianMemes(gooseDir));
@@ -672,12 +673,45 @@ namespace Tests
             Check("визг зациклен без щелчка", Math.Abs(squeal[0] - squeal[squeal.Length - 1]) < 0.2f);
 
             float[] beat = DriftSynth.Phonk();
-            float seconds = beat.Length / (float)DriftSynth.Rate;
-            Check("фонк-бит: два такта на 130 ударов в минуту", Math.Abs(seconds - 32 * 60f / 130f / 4f) < 0.05f, seconds.ToString("0.00") + " с");
+            float seconds = beat.Length / (float)DriftSynth.MusicRate;
+            Check("фонк: четыре такта на 130 ударов в минуту, 44,1 кГц", Math.Abs(seconds - 64 * 60f / 130f / 4f) < 0.05f, seconds.ToString("0.00") + " с");
+            Check("фонк зациклен без щелчка", Math.Abs(beat[0] - beat[beat.Length - 1]) < 0.25f, beat[0].ToString("0.00") + " / " + beat[beat.Length - 1].ToString("0.00"));
+            // the cowbell hook is there: strong energy around D5–D6 (500–1300 Hz) in the first 16th of the loop
+            int n16 = (int)(DriftSynth.MusicRate * 60.0 / 130 / 4);
+            double re = 0, im = 0;
+            for (int i = 0; i < n16; i++) { double a = 2 * Math.PI * 587.33 * i / DriftSynth.MusicRate; re += beat[i] * Math.Cos(a); im += beat[i] * Math.Sin(a); }
+            Check("первая нота коубелла — ре (587 Гц)", Math.Sqrt(re * re + im * im) / n16 > 0.02, (Math.Sqrt(re * re + im * im) / n16).ToString("0.000"));
             double low = 0, all = 0, lp = 0;
             foreach (float x in beat) { lp += (x - lp) * 0.02; low += lp * lp; all += x * x; }
             Check("в бите есть бас и бочка", low / all > 0.05, (low / all).ToString("0.000"));
-            Check("бит громкий, но без перегруза", beat.Max(x => Math.Abs(x)) > 0.8f && beat.Max(x => Math.Abs(x)) <= 0.86f);
+            Check("бит громкий, но без перегруза", beat.Max(x => Math.Abs(x)) > 0.85f && beat.Max(x => Math.Abs(x)) <= 0.91f);
+        }
+
+        private static void TestChase()
+        {
+            FakeWorld w = new FakeWorld();
+            GooseEntity g = w.NewGoose(new Vector2(300f, 500f));
+            Deluxe.Goose = g;
+            Input.mouseX = 900; Input.mouseY = 300;
+            Check("погоня начинается", Deluxe.SetTask(ChaseCursorTask.Id, false) && w.TaskOf(g) == ChaseCursorTask.Id);
+            w.Run(g, 0.5f);
+            Check("бежит на курсор со всех лап", g.currentSpeed >= g.parameters.ChargeSpeed * 0.99f && Vector2.Distance(g.targetPos, new Vector2(900f, 300f)) < 1f,
+                  g.currentSpeed.ToString("0"));
+            Input.mouseX = 200; Input.mouseY = 200;
+            w.Run(g, 0.2f);
+            Check("курсор уехал — гусь поворачивает за ним", Vector2.Distance(g.targetPos, new Vector2(200f, 200f)) < 1f);
+            w.Run(g, 3f);
+            Check("догнал — гагакнул", w.Honks >= 1, w.Honks.ToString());
+            w.Run(g, 6f, () => w.TaskOf(g) == "Wander");
+            Check("через несколько секунд бросает и гуляет дальше", w.TaskOf(g) == "Wander");
+
+            RandomChase rc = new RandomChase(new Random(3));
+            int chases = 0;
+            double first = -1;
+            for (double t = 0; t < 7200; t += 1)
+                if (rc.Due(t, 6f)) { chases++; if (first < 0) first = t; }
+            Check("сам гоняется нечасто: за 2 часа примерно 20 раз", chases >= 12 && chases <= 30, chases.ToString());
+            Check("и не в первые минуты", first >= 180, (first / 60).ToString("0.0") + " мин");
         }
 
         private static void TestNoRepeatsAndLeafHit()

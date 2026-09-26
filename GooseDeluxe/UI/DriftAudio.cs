@@ -118,7 +118,9 @@ namespace GooseDeluxe
             }
             else
             {
-                Open(DriftSynth.Ensure(modDir, "drift-phonk.wav", DriftSynth.Phonk), Music);
+                string old = Path.Combine(modDir, "drift-phonk.wav"); // 0.7's beat, replaced
+                if (File.Exists(old)) File.Delete(old);
+                Open(DriftSynth.Ensure(modDir, "drift-phonk-2.wav", DriftSynth.Phonk, DriftSynth.MusicRate), Music);
                 userTrack = false;
                 MusicSource = "встроенный фонк-бит";
             }

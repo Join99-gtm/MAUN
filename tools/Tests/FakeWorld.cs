@@ -57,6 +57,7 @@ namespace Tests
             Tasks.Add(new VisitTask());
             Tasks.Add(new LeaveTask());
             Tasks.Add(new ChaseSnowdriftTask());
+            Tasks.Add(new ChaseCursorTask());
 
             API.Goose = new API.GooseFunctionPointers
             {
