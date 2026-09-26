@@ -42,6 +42,7 @@ internal static class Program
         frames.Add(Scenario("20-new-year", HatStyle.Santa, s => { WinterDay(s); return Settle(s, 1); }));
         frames.Add(Scenario("21-snowdrift-burst", HatStyle.None, SnowBurst));
         frames.Add(Scenario("22-autumn-off-spring", HatStyle.None, s => { s.label = null; return Idle(s); }));
+        frames.Add(Scenario("23-drift", HatStyle.None, Drift));
 
         foreach (KeyValuePair<string, Bitmap> f in frames)
             f.Value.Save(Path.Combine(outDir, f.Key + ".png"), ImageFormat.Png);
@@ -134,6 +135,7 @@ internal static class Program
             g.Clear(Background);
             s.renderer.Prepare(g);
             if (s.winter != null) s.winter.DrawGround(g, s.now, new Vector2(W, H), 2.4f);
+            s.particles.DrawSmoke(g, s.now);
             s.renderer.Draw(g, pose, s.goose, s.now, hat, s.label, s.scarf);
             s.particles.Draw(g, s.now);
             if (s.winter != null) s.winter.DrawAir(g);
@@ -184,6 +186,26 @@ internal static class Program
         s.goose.stepInterval = 0.1f;
         s.goose.rig.neckLerpPercent = 1f;
         return Settle(s, 45);
+    }
+
+    // chasing a cursor that goes round in circles: the momentum swings, the body leads, smoke from the feet
+    private static GoosePose Drift(Sim s)
+    {
+        GoosePose p = null;
+        float heading = 0f;
+        Vector2 center = s.goose.position;
+        for (int i = 0; i < 70; i++)
+        {
+            heading += 6f * Sim.Dt;
+            s.goose.velocity = new Vector2((float)Math.Cos(heading), (float)Math.Sin(heading)) * 400f;
+            s.goose.direction = heading * 180f / (float)Math.PI + 40f;
+            s.goose.position = center + new Vector2((float)Math.Sin(heading), -(float)Math.Cos(heading)) * 40f;
+            s.goose.stepInterval = 0.1f;
+            s.goose.rig.neckLerpPercent = 1f;
+            s.SetFeet();
+            p = s.Step();
+        }
+        return p;
     }
 
     private static GoosePose Honk(Sim s)

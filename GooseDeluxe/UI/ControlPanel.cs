@@ -124,6 +124,8 @@ namespace GooseDeluxe
             main.Controls.Add(Btn("Украсть курсор", () => c.RunGooseTask("NabMouse")));
             main.Controls.Add(Btn("Убрать листья", c.SweepLeaves));
             main.Controls.Add(Btn("Папка мемов (добавить свои)", c.OpenMemesFolder));
+            main.Controls.Add(Btn("Тест дрифта (дым и фонк)", c.TestDrift));
+            main.Controls.Add(Btn("Папка фонка (свой трек)", c.OpenPhonkFolder));
             pauseButton = Btn("Пауза  (Ctrl+Alt+P)", c.TogglePause);
             main.Controls.Add(pauseButton);
             main.Controls.Add(Btn("Выгнать гуся", () =>
@@ -250,6 +252,8 @@ namespace GooseDeluxe
             behave.Controls.Add(Setting("Мемы и записки без повторов", "NoRepeats"));
             behave.Controls.Add(Setting("Кучи листьев убираются кликом", "ClickLeafPiles"));
             behave.Controls.Add(Setting("Кучи листьев осенью", "LeafPiles"));
+            behave.Controls.Add(Setting("Визг шин в заносе", "DriftSound"));
+            behave.Controls.Add(Setting("Фонк в заносе", "DriftMusic"));
 
             // --- animation
             TableLayoutPanel anim = Grid(2);
@@ -259,6 +263,7 @@ namespace GooseDeluxe
                 { "Плавные повороты", "SmoothTurning" }, { "Сжатие при разгоне", "SquashStretch" }, { "Смотрит на курсор", "LookAtCursor" },
                 { "Моргает", "Blink" }, { "Зевает, чистит перья", "IdleAnimations" }, { "Крылья", "Wings" },
                 { "Открывает клюв", "HonkAnimation" }, { "Пыль, перья, снег", "Particles" }, { "Надписи «ГА!»", "HonkText" },
+                { "Дым из-под лап в заносе", "DriftSmoke" },
             };
             for (int i = 0; i < animKeys.GetLength(0); i++) anim.Controls.Add(Setting(animKeys[i, 0], animKeys[i, 1]));
 

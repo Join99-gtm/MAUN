@@ -68,6 +68,9 @@ namespace GooseDeluxe
         /// <summary>All leaf piles fly away at once.</summary>
         void SweepLeaves();
         void OpenMemesFolder();
+        void OpenPhonkFolder();
+        /// <summary>A few seconds of drift for a check: smoke from the feet, the squeal and the phonk.</summary>
+        void TestDrift();
 
         // the goose's own settings (config.ini)
         bool GooseSettingsAvailable { get; }

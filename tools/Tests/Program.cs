@@ -38,6 +38,7 @@ namespace Tests
             Run("Task: run through a snowdrift", TestSnowdriftRun);
             Run("Пульт: горячие клавиши, клик по гусю, сохранение, отчёт", TestPanelLogic);
             Run("Мемы и записки без повторов, клик по куче листьев", TestNoRepeatsAndLeafHit);
+            Run("Дрифт: дым из-под лап, визг шин, фонк", TestDrift);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
             if (gooseDir != null) Run("Мемы по-русски (настоящие мемы гуся)", () => TestRussianMemes(gooseDir));
@@ -614,6 +615,69 @@ namespace Tests
             Check("пропавший русский мем делается заново из оригинала", MemeTranslator.Apply(root, true) == 6 && File.Exists(Path.Combine(dir, "Meme5.png")));
             Check("выключить — вернутся английские оригиналы", MemeTranslator.Apply(root, false) == 0 && !Directory.Exists(en) &&
                   before.All(kv => Sha(Path.Combine(dir, kv.Key)) == kv.Value));
+        }
+
+        private static float DriftRun(float speed, float swingRadPerSec, float slipDeg, out int smoke)
+        {
+            DeluxeConfig cfg = new DeluxeConfig();
+            ParticleSystem ps = new ParticleSystem();
+            GooseAnimator anim = new GooseAnimator(cfg, ps) { SilentStart = true };
+            GooseEntity g = new GooseEntity(e => { }, (r, p, d) => { }, (e, gfx) => { });
+            g.parameters = new GooseEntity.ParametersTable();
+            g.renderData = new GooseRenderData { brushGooseWhite = new System.Drawing.SolidBrush(System.Drawing.Color.White),
+                brushGooseOrange = new System.Drawing.SolidBrush(System.Drawing.Color.Orange), brushGooseOutline = new System.Drawing.SolidBrush(System.Drawing.Color.LightGray) };
+            g.rig.feets = new ProceduralFeets();
+            g.position = new Vector2(500, 400);
+            float heading = 0f, now = 0f, dt = 1f / 60f;
+            smoke = 0;
+            float peak = 0f;
+            for (int i = 0; i < 90; i++)
+            {
+                heading += swingRadPerSec * dt;
+                g.velocity = new Vector2((float)Math.Cos(heading), (float)Math.Sin(heading)) * speed;
+                g.direction = heading * 180f / (float)Math.PI + slipDeg;
+                g.position += g.velocity * dt;
+                g.rig.feets.lFootPos = g.position + new Vector2(-6, 0);
+                g.rig.feets.rFootPos = g.position + new Vector2(6, 0);
+                now += dt;
+                anim.Update(g, dt, now);
+                ps.Update(dt, now);
+                peak = Math.Max(peak, anim.DriftAmount);
+            }
+            smoke = ps.CountOf(ParticleKind.Smoke);
+            return peak;
+        }
+
+        private static void TestDrift()
+        {
+            int smoke;
+            float straight = DriftRun(400f, 0f, 0f, out smoke);
+            Check("несётся по прямой — дыма нет", straight < 0.1f && smoke == 0, straight.ToString("0.00") + ", дым " + smoke);
+            float circle = DriftRun(400f, 6f, 35f, out smoke);
+            Check("несётся за курсором по кругу — занос и дым из-под лап", circle > 0.7f && smoke > 20, circle.ToString("0.00") + ", дым " + smoke);
+            float slow = DriftRun(90f, 6f, 35f, out smoke);
+            Check("медленно по кругу — дыма нет", slow < 0.1f && smoke == 0, slow.ToString("0.00") + ", дым " + smoke);
+            float run = DriftRun(200f, 5f, 30f, out smoke);
+            Check("просто бежит и поворачивает — дыма немного", run > 0.1f && run < circle, run.ToString("0.00"));
+
+            float[] squeal = DriftSynth.Screech();
+            byte[] wav = DriftSynth.Wav(squeal);
+            Check("визг шин: WAV на 2 с", Encoding.ASCII.GetString(wav, 0, 4) == "RIFF" && Encoding.ASCII.GetString(wav, 8, 4) == "WAVE" &&
+                  Math.Abs(squeal.Length - 2 * DriftSynth.Rate) < DriftSynth.Rate / 50, squeal.Length.ToString());
+            int zc = 0;
+            for (int i = 1; i < squeal.Length; i++) if ((squeal[i] >= 0) != (squeal[i - 1] >= 0)) zc++;
+            float squealHz = zc / 2f / (squeal.Length / (float)DriftSynth.Rate);
+            Check("визг высокий (выше топота лап), около 2 кГц", squealHz > 1200 && squealHz < 3500, squealHz.ToString("0") + " Гц");
+            Check("визг не на полную громкость", squeal.Max(x => Math.Abs(x)) <= 0.51f);
+            Check("визг зациклен без щелчка", Math.Abs(squeal[0] - squeal[squeal.Length - 1]) < 0.2f);
+
+            float[] beat = DriftSynth.Phonk();
+            float seconds = beat.Length / (float)DriftSynth.Rate;
+            Check("фонк-бит: два такта на 130 ударов в минуту", Math.Abs(seconds - 32 * 60f / 130f / 4f) < 0.05f, seconds.ToString("0.00") + " с");
+            double low = 0, all = 0, lp = 0;
+            foreach (float x in beat) { lp += (x - lp) * 0.02; low += lp * lp; all += x * x; }
+            Check("в бите есть бас и бочка", low / all > 0.05, (low / all).ToString("0.000"));
+            Check("бит громкий, но без перегруза", beat.Max(x => Math.Abs(x)) > 0.8f && beat.Max(x => Math.Abs(x)) <= 0.86f);
         }
 
         private static void TestNoRepeatsAndLeafHit()

@@ -53,6 +53,13 @@ namespace GooseDeluxe
         public float EscHoldSeconds = 3f;
         public bool LeafPiles = true;
 
+        // drift (0.7)
+        public bool DriftSmoke = true;
+        public bool DriftSound = true;
+        public bool DriftMusic = true;
+        public float DriftMusicFrom = 20f;
+        public float DriftMusicTo = 25f;
+
         // friends (0.2)
         public bool Friends = true;
         public bool FriendCanStealMouse = true;
@@ -66,6 +73,7 @@ namespace GooseDeluxe
             "Friends", "FriendCanStealMouse", "NtfyServer",
             "Seasons", "WinterScarf", "NewYearHat",
             "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds", "LeafPiles",
+            "DriftSmoke", "DriftSound", "DriftMusic", "DriftMusicFrom", "DriftMusicTo",
         };
 
         public static DeluxeConfig Load(string path)
@@ -120,6 +128,11 @@ namespace GooseDeluxe
             c.RussianMemes = GetBool(kv, "RussianMemes", c.RussianMemes);
             c.EscHoldSeconds = Clamp(GetFloat(kv, "EscHoldSeconds", c.EscHoldSeconds), 0.5f, 10f);
             c.LeafPiles = GetBool(kv, "LeafPiles", c.LeafPiles);
+            c.DriftSmoke = GetBool(kv, "DriftSmoke", c.DriftSmoke);
+            c.DriftSound = GetBool(kv, "DriftSound", c.DriftSound);
+            c.DriftMusic = GetBool(kv, "DriftMusic", c.DriftMusic);
+            c.DriftMusicFrom = Clamp(GetFloat(kv, "DriftMusicFrom", c.DriftMusicFrom), 0f, 3600f);
+            c.DriftMusicTo = Clamp(GetFloat(kv, "DriftMusicTo", c.DriftMusicTo), c.DriftMusicFrom + 1f, 3601f);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -186,6 +199,11 @@ namespace GooseDeluxe
             add("ClickLeafPiles", B(ClickLeafPiles), "Кучи листьев разлетаются от клика мышкой");
             add("NoRepeats", B(NoRepeats), "Мемы и записки гуся по кругу, без повторов");
             add("EscHoldSeconds", EscHoldSeconds.ToString(CultureInfo.InvariantCulture), "Сколько секунд держать ESC, чтобы выгнать гуся (0.5 - 10; у самого гуся было около 8)");
+            add("DriftSmoke", B(DriftSmoke), "Дрифт: дым из-под лап, когда гусь несётся и резко поворачивает");
+            add("DriftSound", B(DriftSound), "Дрифт: тихий визг шин (тише топота лап)");
+            add("DriftMusic", B(DriftMusic), "Дрифт: фонк. Свой трек положи в папку Фонк рядом с модом, иначе играет встроенный бит");
+            add("DriftMusicFrom", DriftMusicFrom.ToString(CultureInfo.InvariantCulture), "С какой секунды играть свой трек");
+            add("DriftMusicTo", DriftMusicTo.ToString(CultureInfo.InvariantCulture), "До какой секунды");
             add("LeafPiles", B(LeafPiles), "Кучи листьев осеннего мода (False — их не будет совсем)");
             add("RussianMemes", B(RussianMemes), "Надписи на мемах гуся по-русски (оригиналы лежат в Assets\\Images\\Memes\\en)");
             return sb.ToString();
@@ -229,7 +247,9 @@ namespace GooseDeluxe
                 if (keys.Contains(k)) return "0.2";
             foreach (string k in new[] { "Seasons", "WinterScarf", "NewYearHat" })
                 if (keys.Contains(k)) return "0.3";
-            return "0.5";
+            foreach (string k in new[] { "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds", "LeafPiles" })
+                if (keys.Contains(k)) return "0.5";
+            return "0.7";
         }
 
         private static bool GetBool(Dictionary<string, string> kv, string key, bool def)

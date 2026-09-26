@@ -6,7 +6,7 @@ using SamEngine;
 
 namespace GooseDeluxe
 {
-    internal enum ParticleKind { Dust, Feather, Text, SleepZ, Snow }
+    internal enum ParticleKind { Dust, Feather, Text, SleepZ, Snow, Smoke }
 
     internal struct Particle
     {
@@ -24,10 +24,11 @@ namespace GooseDeluxe
     /// <summary>Dust puffs when charging, feathers when honking/bumped, floating "HONK!" text.</summary>
     internal sealed class ParticleSystem
     {
-        private const int Max = 250;
+        private const int Max = 400;
         private readonly List<Particle> list = new List<Particle>();
         private static readonly Font textFont = new Font("Arial", 11f, FontStyle.Bold);
         private static readonly Color dustColor = Color.FromArgb(150, 140, 120);
+        private static readonly Color smokeColor = Color.FromArgb(228, 228, 232);
 
         public int Count { get { return list.Count; } }
 
@@ -42,6 +43,31 @@ namespace GooseDeluxe
             p.size = M.Rand(2.5f, 4.5f) * scale;
             p.color = dustColor;
             p.seed = M.Rand(0f, 100f);
+            p.born = now;
+            list.Add(p);
+        }
+
+        public int CountOf(ParticleKind kind)
+        {
+            int n = 0;
+            foreach (Particle p in list) if (p.kind == kind) n++;
+            return n;
+        }
+
+        /// <summary>Tyre smoke from under a foot when the goose drifts: a soft puff that swells, rises and fades.</summary>
+        public void SpawnSmoke(Vector2 at, Vector2 gooseVel, float scale, float strength, float now)
+        {
+            if (list.Count >= Max) return;
+            Particle p = new Particle();
+            p.kind = ParticleKind.Smoke;
+            p.pos = at + new Vector2(M.Rand(-3f, 3f), M.Rand(-2f, 1f)) * scale;
+            float speed = Vector2.Magnitude(gooseVel);
+            Vector2 back = speed > 1f ? gooseVel * (-M.Rand(0.05f, 0.18f)) : Vector2.zero; // left behind the goose
+            p.vel = back + new Vector2(M.Rand(-22f, 22f), M.Rand(-26f, -6f));
+            p.life = M.Rand(0.9f, 1.6f);
+            p.size = M.Rand(5f, 8.5f) * scale * (0.75f + 0.5f * strength);
+            p.color = smokeColor;
+            p.seed = M.Rand(0f, 6.28f);
             p.born = now;
             list.Add(p);
         }
@@ -140,13 +166,22 @@ namespace GooseDeluxe
                         p.vel.y += 520f * dt;
                         p.vel.x *= 1f - 1.2f * dt;
                         break;
+                    case ParticleKind.Smoke:
+                        p.vel = p.vel * (1f - 1.8f * dt);
+                        p.vel.y -= 10f * dt; // warm smoke drifts up a little
+                        break;
                 }
                 p.pos += p.vel * dt;
                 list[i] = p;
             }
         }
 
-        public void Draw(Graphics g, float now)
+        /// <summary>Tyre smoke goes under the geese (they burst out of their own cloud); call before drawing them.</summary>
+        public void DrawSmoke(Graphics g, float now) { Draw(g, now, true); }
+
+        public void Draw(Graphics g, float now) { Draw(g, now, false); }
+
+        private void Draw(Graphics g, float now, bool smoke)
         {
             if (list.Count == 0) return;
             TextRenderingHint oldHint = g.TextRenderingHint;
@@ -154,6 +189,7 @@ namespace GooseDeluxe
             for (int i = 0; i < list.Count; i++)
             {
                 Particle p = list[i];
+                if ((p.kind == ParticleKind.Smoke) != smoke) continue;
                 float t = M.Clamp01((now - p.born) / p.life);
                 switch (p.kind)
                 {
@@ -179,6 +215,16 @@ namespace GooseDeluxe
                                 g.DrawLine(pen, 0f, -p.size * 1.1f, 0f, p.size * 1.1f);
                                 g.ResetTransform();
                             }
+                            break;
+                        }
+                    case ParticleKind.Smoke:
+                        {
+                            float r = p.size * (0.7f + 2.4f * t);
+                            float alpha = (t < 0.12f ? t / 0.12f : 1f) * (float)Math.Pow(1f - t, 1.4f);
+                            using (SolidBrush outer = new SolidBrush(M.WithAlpha(p.color, 0.26f * alpha)))
+                                g.FillEllipse(outer, p.pos.x - r * 1.35f, p.pos.y - r * 1.1f, r * 2.7f, r * 2.2f);
+                            using (SolidBrush core = new SolidBrush(M.WithAlpha(Color.FromArgb(210, 210, 216), 0.48f * alpha)))
+                                g.FillEllipse(core, p.pos.x - r, p.pos.y - r * 0.8f, r * 2f, r * 1.6f);
                             break;
                         }
                     case ParticleKind.Snow:

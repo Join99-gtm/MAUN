@@ -46,6 +46,7 @@ namespace GooseDeluxe
         private int leafClicks;
         private readonly GooseForms forms = new GooseForms();
         private int russianMemes;
+        private DriftAudio driftAudio;
         private float escProgress;
         private bool leftDown;
         private Vector2 leftDownAt;
@@ -188,6 +189,19 @@ namespace GooseDeluxe
             }
             overlay.GooseRightClicked += () => Guard("right click", ShowGooseMenu);
             overlay.LeftClicked += p => Guard("left click", () => OnLeftClick(p));
+            Guard("drift", () =>
+            {
+                driftAudio = new DriftAudio(Deluxe.ModDir);
+                string phonk = DriftAudio.PhonkFolder(Deluxe.ModDir);
+                if (!Directory.Exists(phonk))
+                {
+                    Directory.CreateDirectory(phonk);
+                    File.WriteAllText(Path.Combine(phonk, "Как добавить свой трек.txt"),
+                        "Положи сюда свой трек (mp3, wav, wma, m4a) — когда гусь дрифтует, он будет играть кусок\r\n" +
+                        "с DriftMusicFrom по DriftMusicTo секунду (настройки в GooseDeluxe.ini, по умолчанию 20–25).\r\n" +
+                        "Если тут нет трека, играет встроенный фонк-бит.\r\n", new System.Text.UTF8Encoding(true));
+                }
+            });
             Guard("what's new", ShowWhatsNewOnce);
             if (cfg.Friends)
             {
@@ -373,6 +387,7 @@ namespace GooseDeluxe
                         draws.Add(new KeyValuePair<float, Action>(v.Entity.position.y, () => renderer.Draw(g, pose, v.Entity, now, v.Look.Hat, label, scarf)));
                     }
                     draws.Sort((a, b) => a.Key.CompareTo(b.Key)); // lower on screen = closer = drawn last
+                    particles.DrawSmoke(g, now);
                     foreach (KeyValuePair<float, Action> d in draws) d.Value();
 
                     particles.Update(dt, now);
@@ -408,6 +423,7 @@ namespace GooseDeluxe
                 Engine.Thaw();
                 if (overlay != null) { overlay.Hide(); overlay.Dispose(); overlay = null; }
                 if (timer != null) timer.Stop();
+                if (driftAudio != null) driftAudio.Dispose();
             }
             catch { }
         }
@@ -430,6 +446,9 @@ namespace GooseDeluxe
             if (poller != null)
                 foreach (char key in poller.Poll(HotkeyLetters)) OnHotkey(key, "опрос клавиатуры");
             MaybeWelcome();
+            if (driftAudio != null)
+                driftAudio.Update(animator.DriftAmount, !GooseSettings.SilenceSounds && !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen,
+                                  cfg, clock.Elapsed.TotalSeconds);
             DispatchMail();
             MaybeRunThroughSnow();
             // while frozen the goose doesn't paint, so a sleeping goose is animated from here
@@ -1064,6 +1083,12 @@ namespace GooseDeluxe
             else add(russianMemes > 0 ? DiagLevel.Ok : DiagLevel.Warn, "Мемы по-русски",
                      russianMemes > 0 ? "переведено мемов: " + russianMemes + " из " + MemeTranslator.Memes.Length + " (оригиналы — в папке Memes\\en)"
                                       : "не нашёл мемов гуся, которые умею переводить");
+            string driftParts = (cfg.DriftSmoke && cfg.Particles ? "дым" : "без дыма") + ", " + (cfg.DriftSound ? "визг шин" : "без визга") + ", " +
+                                (cfg.DriftMusic ? "фонк: " + (driftAudio == null ? "?" : (driftAudio.UserTrack() != null ? Path.GetFileName(driftAudio.UserTrack()) + " (" +
+                                 cfg.DriftMusicFrom.ToString("0.#") + "–" + cfg.DriftMusicTo.ToString("0.#") + " с)" : "встроенный бит (свой трек — в папку Фонк)")) : "без фонка");
+            if (driftAudio != null && driftAudio.LastError != null) add(DiagLevel.Warn, "Дрифт", driftParts + ". Звук не заиграл: " + driftAudio.LastError);
+            else add(DiagLevel.Ok, "Дрифт", driftParts + (GooseSettings.SilenceSounds ? " (звук гуся выключен — будет тихо)" : "") +
+                     ". Сейчас занос: " + (animator.DriftAmount * 100).ToString("0") + "%. Проверить — кнопка «Тест дрифта» на вкладке «Пульт»");
             if (!cfg.NoRepeats) add(DiagLevel.Info, "Мемы и записки без повторов", "выключено в настройках");
             else add(DiagLevel.Ok, "Мемы и записки без повторов", "по кругу, без повторов подряд. Принесено мемов: " + forms.MemesShown + ", записок: " + forms.NotesShown +
                      (forms.LastMeme != null ? ". Последний мем: " + Path.GetFileName(forms.LastMeme) : "") +
@@ -1137,6 +1162,19 @@ namespace GooseDeluxe
             Process.Start("explorer.exe", "\"" + dir + "\"");
         }
 
+        public void OpenPhonkFolder()
+        {
+            string dir = DriftAudio.PhonkFolder(Deluxe.ModDir);
+            Directory.CreateDirectory(dir);
+            Process.Start("explorer.exe", "\"" + dir + "\"");
+        }
+
+        public void TestDrift()
+        {
+            Wake();
+            animator.ForceDriftUntil = Time.time + 4f;
+        }
+
         public void SweepLeaves()
         {
             if (autumn == null) return;
@@ -1204,6 +1242,7 @@ namespace GooseDeluxe
             try { if (tray != null) tray.Dispose(); } catch { }
             try { if (overlay != null) foreach (int id in hotkeys) UnregisterHotKey(overlay.Handle, id); } catch { }
             try { if (Deluxe.Friends != null) Deluxe.Friends.Stop(); } catch { }
+            try { if (driftAudio != null) driftAudio.Dispose(); } catch { }
         }
 
         private static Icon AppIcon()

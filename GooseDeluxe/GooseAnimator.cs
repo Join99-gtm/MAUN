@@ -55,6 +55,14 @@ namespace GooseDeluxe
         private float honkEndTime = -1f;
         private const float HonkDuration = 0.45f;
         private float lastDustTime;
+        private Vector2 lastHeading;
+        private bool haveHeading;
+        private float lastSmokeTime;
+
+        /// <summary>0..1: how hard the goose is drifting right now (tyre smoke, tyre sound, phonk).</summary>
+        public float DriftAmount { get; private set; }
+        /// <summary>Until this time (the goose's clock) the goose drifts full on, whatever it does (the panel's drift test).</summary>
+        public float ForceDriftUntil = -1f;
         private int lastTask = int.MinValue;
         private string[] taskIds;
         private int wanderTaskIndex = -1;
@@ -79,6 +87,41 @@ namespace GooseDeluxe
         {
             this.cfg = cfg;
             this.particles = particles;
+        }
+
+        /// <summary>
+        /// Drift: running fast while the body and the momentum point different ways (the goose snaps its head
+        /// round to a new target, its speed takes a moment to follow), or while the momentum itself swings round
+        /// fast — say, chasing a cursor that's moved in circles. Then tyre smoke puffs from under both feet.
+        /// </summary>
+        private void UpdateDrift(GooseEntity g, float speed, float run, float dt, float now, float scale)
+        {
+            float target = 0f;
+            if (speed > 5f && dt > 0f && !Asleep)
+            {
+                Vector2 heading = g.velocity * (1f / speed);
+                float swing = 0f; // how fast the momentum turns, rad/s
+                if (haveHeading)
+                {
+                    float dot = M.Clamp(lastHeading.x * heading.x + lastHeading.y * heading.y, -1f, 1f);
+                    swing = (float)Math.Acos(dot) / dt;
+                }
+                lastHeading = heading;
+                haveHeading = true;
+                float moveDir = (float)(Math.Atan2(heading.y, heading.x) * 180.0 / Math.PI);
+                float slip = Math.Abs(M.WrapDeg(g.direction - moveDir));
+                float fast = M.Clamp01((speed - run * 0.8f) / Math.Max(1f, run * 0.6f));
+                target = fast * Math.Max(M.Clamp01((slip - 20f) / 45f), M.Clamp01((swing - 2f) / 4f));
+            }
+            else haveHeading = false;
+            if (now < ForceDriftUntil) target = 1f;
+            DriftAmount = M.Lerp(DriftAmount, target, Math.Min(1f, dt * (target > DriftAmount ? 10f : 4f)));
+
+            if (!cfg.Particles || !cfg.DriftSmoke || DriftAmount < 0.15f) return;
+            if (now - lastSmokeTime < M.Lerp(0.07f, 0.016f, DriftAmount)) return;
+            lastSmokeTime = now;
+            particles.SpawnSmoke(ScaleAbout(g.rig.feets.lFootPos, g.position, scale), g.velocity, scale, DriftAmount, now);
+            particles.SpawnSmoke(ScaleAbout(g.rig.feets.rFootPos, g.position, scale), g.velocity, scale, DriftAmount, now);
         }
 
         public void Honk(GooseEntity g, float now)
@@ -259,6 +302,8 @@ namespace GooseDeluxe
                 Vector2 foot = M.RandInt(2) == 0 ? g.rig.feets.lFootPos : g.rig.feets.rFootPos;
                 particles.SpawnDust(ScaleAbout(foot, g.position, scale), g.velocity, scale, now);
             }
+
+            UpdateDrift(g, speed, run, dt, now, scale);
 
             // --- build the rig (same formulas as the goose, plus our offsets) ---
             float neckLerp = g.rig.neckLerpPercent;

@@ -26,6 +26,7 @@
     <Compile Include="../../GooseDeluxe/GooseHit.cs" />
     <Compile Include="../../GooseDeluxe/NoRepeatDeck.cs" />
     <Compile Include="../../GooseDeluxe/MemeTranslator.cs" />
+    <Compile Include="../../GooseDeluxe/DriftSynth.cs" />
     <Compile Include="../../GooseDeluxe/ModInfo.cs" />
     <Compile Include="../../GooseDeluxe/UI/IGooseControls.cs" />
     <Compile Include="../../GooseDeluxe/Net/*.cs" />
