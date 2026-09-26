@@ -245,6 +245,14 @@ function Install-Into([string]$gooseDir, [string]$dll, [string]$ini) {
             Copy-Item -LiteralPath $ini -Destination (Join-Path $modDir 'GooseDeluxe.ini') -Force
         }
     }
+    # 0.6.2 wrote EscHoldSeconds=1.5; the user asked for 3 s since, so the old default moves to the new one
+    $userIni = Join-Path $modDir 'GooseDeluxe.ini'
+    try {
+        $iniText = [IO.File]::ReadAllText($userIni)
+        if ($iniText -match '(?m)^EscHoldSeconds=1\.5\s*$') {
+            [IO.File]::WriteAllText($userIni, [regex]::Replace($iniText, '(?m)^EscHoldSeconds=1\.5(\s*)$', 'EscHoldSeconds=3$1'), (New-Object System.Text.UTF8Encoding($true)))
+        }
+    } catch { }
     # a downloaded zip marks its files as "from the internet"; the goose loads mods anyway, but clear it
     try { Unblock-File -LiteralPath $target -ErrorAction Stop } catch { }
     # the goose loads every DLL in a mod folder; a stray copy of the API there breaks the mod
