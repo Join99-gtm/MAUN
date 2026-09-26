@@ -20,6 +20,7 @@ case "$2" in
   silent) sleep 20 ;;
   av)     sleep 1; rm -f "\$D/GooseDeluxe.dll"; sleep 20 ;;
   exits)  exit 3 ;;
+  exitsmod) grep -q '^EnableMods=True' "\$(dirname "\$0")/config.ini" && exit 3; sleep 20 ;;
 esac
 EOF
   chmod +x "$1/GooseDesktop.exe"
@@ -27,7 +28,7 @@ EOF
 run() { H=$1; I=$2; shift 2; USERPROFILE=$H pwsh -NoProfile -Command "& '$I/install.ps1' -DesktopPath '$H/Desktop' -SearchRoots @('$H/Desktop/Гусь','$H/Desktop','$H/Downloads','$I') -NoGui -AutoYes -WaitSeconds 8 $*; exit \$LASTEXITCODE" 2>&1 | grep -v "  searching " | sed 's/^/    /'; echo "    exit=${PIPESTATUS[0]}"; }
 cleanup() { pkill -f "fake goose" 2>/dev/null; pkill -f "$T/.*/GooseDesktop.exe" 2>/dev/null; true; }
 
-for mode in hooked failed silent av exits; do
+for mode in hooked failed silent av exits exitsmod; do
   echo "################ LAUNCH: fake goose '$mode'"
   H=$T/$mode; mkdir -p "$H/Desktop/Гусь" "$H/Downloads" && cp -r "$G/." "$H/Desktop/Гусь/" && fakegoose "$H/Desktop/Гусь" $mode && mkpayload $H/Downloads/GooseDeluxe-v0.5
   run $H $H/Downloads/GooseDeluxe-v0.5 | grep -E "exit=|\[INFO\]|\[ERROR\]|wait result|report: (Итог|Файл мода|Проверка)" | cut -c1-260

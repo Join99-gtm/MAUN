@@ -302,6 +302,56 @@ function Copy-Report {
     return $false
 }
 
+function Get-SmartAppControl {
+    try {
+        $v = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -ErrorAction Stop).VerifiedAndReputablePolicyState
+        switch ($v) { 0 { return 'выключен' } 1 { return 'ВКЛЮЧЁН' } 2 { return 'в режиме оценки' } default { return [string]$v } }
+    } catch { return 'неизвестно' }
+}
+
+function Get-CrashEvents([datetime]$since) {
+    # a .NET crash or a killed process leaves an entry in the Application log (readable without admin rights)
+    $out = @()
+    try {
+        $evts = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $since } -ErrorAction Stop |
+                  Where-Object { $_.Message -match 'GooseDesktop' } | Select-Object -First 3)
+        foreach ($e in $evts) {
+            $lines = @($e.Message -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 14)
+            $out += ($e.ProviderName + ' ' + $e.Id + ': ' + ($lines -join ' | '))
+        }
+    } catch { }
+    return $out
+}
+
+function Get-DefenderDetections {
+    $out = @()
+    try {
+        $all = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object { ($_.Resources -join ' ') -match 'Goose' })
+        foreach ($x in ($all | Select-Object -Last 5)) {
+            $name = ''
+            try { $name = (Get-MpThreat -ThreatID $x.ThreatID -ErrorAction Stop).ThreatName } catch { }
+            $out += ($name + ' ' + $x.InitialDetectionTime + ' ' + ($x.Resources -join ', '))
+        }
+    } catch { $out += ('(журнал Защитника не читается: ' + $_.Exception.Message + ')') }
+    return $out
+}
+
+function Test-GooseWithoutMods([string]$gooseDir) {
+    # the decisive check when the goose dies at start: does it live with mods switched off?
+    $cfg = Join-Path $gooseDir 'config.ini'
+    $orig = [IO.File]::ReadAllText($cfg)
+    try {
+        [IO.File]::WriteAllText($cfg, [regex]::Replace($orig, '(?m)^EnableMods=.*$', 'EnableMods=False'), [System.Text.Encoding]::ASCII)
+        Log 'starting the goose without mods for a check'
+        $p = Start-Process -FilePath (Join-Path $gooseDir 'GooseDesktop.exe') -WorkingDirectory $gooseDir -PassThru
+        for ($i = 0; $i -lt 16 -and -not $p.HasExited; $i++) { Start-Sleep -Milliseconds 500 }
+        if ($p.HasExited) { return ('закрылся сам, код ' + $p.ExitCode) }
+        try { $p | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
+        return 'работает'
+    } catch { return ('не запустился: ' + $_.Exception.Message) }
+    finally { [IO.File]::WriteAllText($cfg, $orig, [System.Text.Encoding]::ASCII) }
+}
+
 # ------------------------------------------------------------------ start the goose and wait for the mod
 
 function Step-Wait($st) {
@@ -615,6 +665,18 @@ try {
 
     # 9. it didn't work: say why as well as we can, and hand over a report
     Note ("Итог ожидания: " + $st.Outcome + $(if ($st.Status) { ' — ' + $st.Status.Line } else { ' — статуса от мода нет' }))
+    $withoutMods = ''
+    if ($st.Outcome -eq 'exited') {
+        try { Note ("Код выхода гуся: " + $st.Process.ExitCode + ", прошло " + [int]($st.Process.ExitTime - $st.StartedAt).TotalSeconds + " с") } catch { }
+        Note ("GooseDesktop.exe на месте: " + (Test-Path -LiteralPath $exePath))
+        Note ("Smart App Control: " + (Get-SmartAppControl))
+        foreach ($e in @(Get-CrashEvents $st.StartedAt.AddSeconds(-5))) { Note ("Журнал Windows: " + $e) }
+        foreach ($d in @(Get-DefenderDetections)) { Note ("Защитник: " + $d) }
+        if (Test-Path -LiteralPath $exePath) {
+            $withoutMods = Test-GooseWithoutMods $gooseDir
+            Note ("Гусь без мода: " + $withoutMods)
+        }
+    }
     Note ("Окна гуся: " + $(if ($st.Titles.Count -gt 0) { ($st.Titles -join ', ') } else { 'не видно' }))
     Note ("Файл мода сейчас: " + (Test-Installed $modDir $want))
     try { Note ("Папка мода: " + ((Get-ChildItem -LiteralPath $modDir -Force | ForEach-Object { $_.Name + ' (' + $_.Length + ')' }) -join ', ')) } catch { }
@@ -628,7 +690,12 @@ try {
     $msg = switch ($st.Outcome) {
         'failed'     { "Мод запустился, но споткнулся: " + $st.Status.Detail + "`nГусь работает по-старому." }
         'loaderror'  { "Гусь показал ошибку «Couldn't Load Mod» — он не смог загрузить мод." }
-        'exited'     { "Гусь закрылся сразу после запуска." }
+        'exited'     {
+            if (-not (Test-Path -LiteralPath $exePath)) { "Гусь закрылся сразу после запуска, а файл GooseDesktop.exe пропал — его удалил Защитник Windows." }
+            elseif ($withoutMods -eq 'работает') { "Гусь закрылся сразу после запуска с модом, а без мода работает — значит, дело в моде. Пришли отчёт, я починю." }
+            elseif ($withoutMods) { "Гусь закрывается сразу после запуска даже без мода (" + $withoutMods + ") — его останавливает Windows или он сломан." }
+            else { "Гусь закрылся сразу после запуска." }
+        }
         'noload'     { "Гусь работает, но мод не загрузился (в окне про моды нажали «Нет», или гусь не видит мод)." }
         'noquestion' { "Гусь не спросил про моды (окна «Mod Enabler Warning» не было), и мод не отозвался." }
         default      { "Не дождался ответа от мода. Если гусь спрашивал про моды, а «Да» не нажато — запусти установку ещё раз." }

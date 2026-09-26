@@ -103,8 +103,13 @@ namespace GooseDeluxe
 
             try { RussianPack.Apply(Deluxe.GooseDir, cfg.RussianNotes); }
             catch (Exception ex) { Deluxe.Log("Russian pack: " + ex.Message); }
-            try { russianMemes = MemeTranslator.Apply(Deluxe.GooseDir, cfg.RussianMemes); }
-            catch (Exception ex) { Deluxe.Log("Russian memes: " + ex.Message); }
+            // redrawing the memes takes a few seconds the first time: not on the goose's thread while it starts
+            bool memesInRussian = cfg.RussianMemes;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { russianMemes = MemeTranslator.Apply(Deluxe.GooseDir, memesInRussian); }
+                catch (Exception ex) { Deluxe.Log("Russian memes: " + ex.Message); }
+            });
 
             winter = new WinterScene();
             Deluxe.Winter = winter;
