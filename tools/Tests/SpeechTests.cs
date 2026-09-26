@@ -213,6 +213,11 @@ namespace Tests
                 RectangleF r = b.Place(new Vector2(640, 400), new Vector2(640, 470), screen, out below);
                 Check("длинная фраза переносится на строки, облачко не шире 330 px", b.Lines >= 3 && r.Width <= SpeechBubble.MaxTextWidth + 2 * SpeechBubble.Pad + 1,
                       b.Lines + " строк, " + r.Width.ToString("0") + " px");
+                SpeechBubble wide = new SpeechBubble("скажи " + new string('А', 120) + "!!!");
+                wide.Layout(g);
+                RectangleF wr = wide.Place(new Vector2(640, 400), new Vector2(640, 470), screen, out below);
+                Check("слово без пробелов длиннее облачка — переносится по буквам", wide.Lines >= 3 && wr.Width <= SpeechBubble.MaxTextWidth + 2 * SpeechBubble.Pad + 1, wide.Lines + " строк");
+                Check("перенос строки в «скажи» с телефона — одна строка текста", FriendProtocol.ParseSay("скажи Где акты?\nГде КС-2?") == "Где акты? Где КС-2?");
                 Check("облачко над головой", !below && r.Bottom <= 400 - SpeechBubble.TailLength + 0.5f);
                 bool inside = true;
                 foreach (Vector2 head in new[] { new Vector2(5, 30), new Vector2(1275, 30), new Vector2(5, 700), new Vector2(1275, 700), new Vector2(640, 5) })

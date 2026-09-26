@@ -94,7 +94,7 @@ namespace GooseDeluxe
             if (text == null) return null;
             Match m = sayRx.Match(text);
             if (!m.Success) return null;
-            string what = m.Groups[3].Value.Trim();
+            string what = Regex.Replace(m.Groups[3].Value, "\\s+", " ").Trim(); // one line for the bubble
             if (what.Length == 0 || what.Equals("что-нибудь", StringComparison.OrdinalIgnoreCase)) return null;
             return what.Length > MaxSayLength ? what.Substring(0, MaxSayLength) : what;
         }

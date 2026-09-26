@@ -47,6 +47,16 @@ namespace GooseDeluxe
                 {
                     Add(g, lineStart, lineEnd, fmt);
                     lineStart = wordStart;
+                    w = g.MeasureString(text.Substring(lineStart, i - lineStart), Font, PointF.Empty, fmt).Width;
+                }
+                // a word wider than the bubble on its own («АААААА…», a link): broken by characters
+                while (w > MaxTextWidth && i - lineStart > 1)
+                {
+                    int n = 1;
+                    while (lineStart + n < i && g.MeasureString(text.Substring(lineStart, n + 1), Font, PointF.Empty, fmt).Width <= MaxTextWidth) n++;
+                    Add(g, lineStart, lineStart + n, fmt);
+                    lineStart += n;
+                    w = g.MeasureString(text.Substring(lineStart, i - lineStart), Font, PointF.Empty, fmt).Width;
                 }
                 lineEnd = i;
             }

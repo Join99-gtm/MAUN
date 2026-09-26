@@ -579,7 +579,7 @@ namespace GooseDeluxe
                        "Нажми на меня ПРАВОЙ кнопкой мыши — там меню и пульт с настройками. Или Ctrl+Alt+M.\n" +
                        "Левой кнопкой — я скажу фразу. Ещё — «Сказать фразу» в меню, а иногда я сам подойду и скажу.\n" +
                        "Свои фразы можно дописать: в меню «Фразы гуся (дописать свои)».\n" +
-                       "Голос и как часто я болтаю — в пульте, вкладка «Настройки». Кучи листьев разлетаются от клика.\n\n" +
+                       "Голос и «сам подходит» — в пульте, вкладка «Настройки». Кучи листьев разлетаются от клика.\n\n" +
                        "Во вкладке «Проверка» видно, что у меня работает. Га!",
             };
             if (!Deluxe.SetTask(DeliverTask.Id, false)) DeliverTask.Pending = null;
@@ -1161,7 +1161,7 @@ namespace GooseDeluxe
                     : "сам не подходит (выключено)";
                 int count = phrases.Count;
                 add(count > 0 && speaker.LastError == null ? DiagLevel.Ok : DiagLevel.Warn, "Фразы",
-                    count + " фраз; " + voice + "; " + self + "; сказано: " + speaker.Said +
+                    "фраз: " + count + "; " + voice + "; " + self + "; сказано: " + speaker.Said +
                     (speaker.LastError != null ? ". Ошибка: " + speaker.LastError : "") +
                     (GooseSettings.SilenceSounds ? ". Звук гуся выключен — только облачко" : "") +
                     ". Сразу — «Сказать фразу» в меню или клик по гусю. Свои фразы — в " + phrases.Path);
@@ -1286,6 +1286,7 @@ namespace GooseDeluxe
         /// <summary>Says a phrase; <paramref name="approach"/>: first walks up to the cursor.</summary>
         private void Say(string text, bool approach)
         {
+            if (text != null) text = System.Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim(); // the bubble is one flowing text
             if (string.IsNullOrEmpty(text)) { HonkNow(); return; }
             double now = clock.Elapsed.TotalSeconds;
             // only a goose that's just wandering stops (or walks up to the cursor) to talk; one that's busy — carrying
@@ -1370,7 +1371,9 @@ namespace GooseDeluxe
         /// <summary>The bubble over the goose's head (its top) — or under its feet if there's no room above.</summary>
         private void DrawBubble(Graphics g, GoosePose pose, GooseEntity me, Vector2 screen)
         {
-            float top = Math.Min(pose.neckHeadPoint.y, Math.Min(pose.head1EndPoint.y, pose.head2EndPoint.y)) - 14f * cfg.Scale;
+            HatStyle hat = cfg.Hat != HatStyle.None ? cfg.Hat : (newYear ? HatStyle.Santa : HatStyle.None);
+            float above = hat == HatStyle.None ? 14f : 32f; // clear of the hat
+            float top = Math.Min(pose.neckHeadPoint.y, Math.Min(pose.head1EndPoint.y, pose.head2EndPoint.y)) - above * cfg.Scale;
             Vector2 head = new Vector2(pose.head2EndPoint.x * 0.5f + pose.neckHeadPoint.x * 0.5f, top);
             Vector2 feet = new Vector2(me.position.x, me.position.y + 10f * cfg.Scale);
             speaker.Draw(g, head, feet, screen, clock.Elapsed.TotalSeconds);
