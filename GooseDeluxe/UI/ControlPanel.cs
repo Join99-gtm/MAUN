@@ -116,6 +116,8 @@ namespace GooseDeluxe
             TabPage page = new TabPage("Пульт") { Padding = new Padding(8), AutoScroll = true };
 
             TableLayoutPanel main = Grid(2);
+            main.Controls.Add(Btn("Сказать фразу", c.SayPhrase));
+            main.Controls.Add(Btn("Фразы (дописать свои)", c.OpenPhrases));
             main.Controls.Add(Btn("Позвать гуся  (Ctrl+Alt+G)", c.Come));
             main.Controls.Add(Btn("Гудок  (Ctrl+Alt+H)", c.HonkNow));
             main.Controls.Add(Btn("Принести мем", () => c.RunGooseTask("CollectMeme")));
@@ -145,11 +147,12 @@ namespace GooseDeluxe
             Button meme = Btn("Принести другу мем", () => c.SendPrank(GooseCommand.Meme));
             Button mud = Btn("Наследить у друга", () => c.SendPrank(GooseCommand.Mud));
             Button steal = Btn("Украсть курсор у друга", () => c.SendPrank(GooseCommand.Steal));
-            needFriend.AddRange(new[] { sendPic, visit, meme, mud, steal });
+            Button phrase = Btn("Сказать другу фразу", () => c.SendPrank(GooseCommand.Phrase));
+            needFriend.AddRange(new[] { sendPic, visit, meme, mud, steal, phrase });
             Button editFriend = Btn("Добавить / изменить друга…", c.EditFriend);
             Button copyCode = Btn("Скопировать мой код", c.CopyMyCode);
             Button invite = Btn("Скопировать приглашение", c.CopyInvite);
-            foreach (Button b in new[] { sendNote, sendPic, visit, meme, mud, steal, editFriend, copyCode, invite }) friends.Controls.Add(b);
+            foreach (Button b in new[] { sendNote, sendPic, visit, meme, mud, steal, phrase, editFriend, copyCode, invite }) friends.Controls.Add(b);
             Panel friendBox = new Panel { Dock = DockStyle.Top, AutoSize = true };
             Stack(friendBox, friendState, friends);
             refreshers.Add(() =>
@@ -256,6 +259,8 @@ namespace GooseDeluxe
             behave.Controls.Add(Setting("Визг шин в заносе", "DriftSound"));
             behave.Controls.Add(Setting("Фонк в заносе", "DriftMusic"));
             behave.Controls.Add(Setting("Иногда сам гоняется за курсором", "RandomChase"));
+            behave.Controls.Add(Setting("Гусь говорит фразы", "Phrases"));
+            behave.Controls.Add(Setting("Сам подходит и говорит фразы", "RandomPhrases"));
 
             // --- animation
             TableLayoutPanel anim = Grid(2);
@@ -271,6 +276,9 @@ namespace GooseDeluxe
 
             // --- language & seasons
             TableLayoutPanel lang = Grid(1);
+            lang.Controls.Add(Choice("Голос фраз", new[] { "Как в Atomic Heart (голос Windows)", "По-гусиному (га-га)", "Без голоса (только облачко)" },
+                () => Math.Max(0, Array.IndexOf(DeluxeConfig.PhraseVoices, cfg.PhraseVoice)),
+                i => { cfg.PhraseVoice = DeluxeConfig.PhraseVoices[i]; c.ApplyConfig("PhraseVoice"); }));
             lang.Controls.Add(Choice("Гудок", new[] { "«ГА-ГА-ГА!» (по-русски)", "«HONK!» (как в оригинале)" },
                 () => cfg.Language == "EN" ? 1 : 0, i => { cfg.Language = i == 1 ? "EN" : "RU"; c.ApplyConfig("Language"); }));
             lang.Controls.Add(Choice("Времена года", new[] { "По дате", "Всегда зима", "Всегда весна", "Всегда лето", "Всегда осень", "Выключить" },

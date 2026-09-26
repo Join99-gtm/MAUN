@@ -61,6 +61,8 @@ namespace UiPreview
         public void OpenPhonkFolder() { Calls.Add("OpenPhonkFolder"); }
         public void TestDrift() { Calls.Add("TestDrift"); }
         public void ChaseCursor() { Calls.Add("ChaseCursor"); }
+        public void SayPhrase() { Calls.Add("SayPhrase"); }
+        public void OpenPhrases() { Calls.Add("OpenPhrases"); }
     }
 
     internal static class Program
@@ -130,8 +132,8 @@ namespace UiPreview
             Console.WriteLine("FAIL friend line empty on open"); fails++;
             friendOk:
             Application.DoEvents();
-            string[] expect = { "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "SweepLeaves", "ChaseCursor", "TestDrift", "Pause True",
-                                "SendNote", "SendPicture", "Prank Honk", "Prank Meme", "Prank Mud", "Prank Steal", "TestNote", "TestSnow" };
+            string[] expect = { "SayPhrase", "OpenPhrases", "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "SweepLeaves", "ChaseCursor", "TestDrift", "Pause True",
+                                "SendNote", "SendPicture", "Prank Honk", "Prank Meme", "Prank Mud", "Prank Steal", "Prank Phrase", "TestNote", "TestSnow" };
             foreach (Button b in buttons)
             {
                 if (b.Text.StartsWith("Выгнать") || b.Text.StartsWith("Скопировать") || b.Text.StartsWith("Папка") || b.Text.StartsWith("Добавить")) continue;

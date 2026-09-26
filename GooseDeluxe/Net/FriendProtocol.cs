@@ -8,7 +8,7 @@ namespace GooseDeluxe
 {
     internal enum IncomingKind { Command, Note, Image, UnsupportedFile }
 
-    internal enum GooseCommand { None, Honk, Meme, Note, Steal, Mud, Come }
+    internal enum GooseCommand { None, Honk, Meme, Note, Steal, Mud, Come, Phrase, Say }
 
     /// <summary>How a visiting goose looks: its owner's colours, hat and name.</summary>
     internal sealed class GuestLook
@@ -43,6 +43,7 @@ namespace GooseDeluxe
     internal static class FriendProtocol
     {
         public const int MaxTextLength = 500;
+        public const int MaxSayLength = 300;
         public const int MaxImageBytes = 8 * 1024 * 1024;
         private const string DefaultFileMessagePrefix = "You received a file";
 
@@ -54,6 +55,8 @@ namespace GooseDeluxe
             { "кража", GooseCommand.Steal }, { "укради", GooseCommand.Steal }, { "мышь", GooseCommand.Steal }, { "курсор", GooseCommand.Steal }, { "steal", GooseCommand.Steal },
             { "грязь", GooseCommand.Mud }, { "следы", GooseCommand.Mud }, { "mud", GooseCommand.Mud },
             { "сюда", GooseCommand.Come }, { "ко мне", GooseCommand.Come }, { "иди сюда", GooseCommand.Come }, { "come", GooseCommand.Come },
+            { "фраза", GooseCommand.Phrase }, { "фразу", GooseCommand.Phrase }, { "скажи", GooseCommand.Phrase }, { "скажи что-нибудь", GooseCommand.Phrase },
+            { "говори", GooseCommand.Phrase }, { "phrase", GooseCommand.Phrase },
         };
 
         private static readonly Regex honkRx = new Regex("^(га[- ]?)+$|^(honk[- ]?)+$", RegexOptions.CultureInvariant);
@@ -78,8 +81,22 @@ namespace GooseDeluxe
                 case GooseCommand.Steal: return "кража";
                 case GooseCommand.Mud: return "грязь";
                 case GooseCommand.Come: return "сюда";
+                case GooseCommand.Phrase: return "фраза";
                 default: return "";
             }
+        }
+
+        private static readonly Regex sayRx = new Regex("^\\s*(скажи|say)(\\s*:\\s*|\\s+)(\\S.*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+        /// <summary>«скажи Где акты?!» — what the goose should say, or null if it's not that kind of message.</summary>
+        public static string ParseSay(string text)
+        {
+            if (text == null) return null;
+            Match m = sayRx.Match(text);
+            if (!m.Success) return null;
+            string what = m.Groups[3].Value.Trim();
+            if (what.Length == 0 || what.Equals("что-нибудь", StringComparison.OrdinalIgnoreCase)) return null;
+            return what.Length > MaxSayLength ? what.Substring(0, MaxSayLength) : what;
         }
 
         private static string NormalizeWord(string text)
@@ -165,6 +182,14 @@ namespace GooseDeluxe
             string text = Clean(m.message, MaxTextLength);
             if (string.IsNullOrEmpty(text)) return null;
             GooseCommand cmd = ParseCommand(text);
+            string say = cmd == GooseCommand.None && !fromGoose ? ParseSay(text) : null; // a friend's goose brings notes as notes
+            if (say != null)
+            {
+                x.Kind = IncomingKind.Command;
+                x.Command = GooseCommand.Say;
+                x.Text = say;
+                return x;
+            }
             if (cmd != GooseCommand.None)
             {
                 x.Kind = IncomingKind.Command;

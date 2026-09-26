@@ -48,6 +48,12 @@ namespace GooseDeluxe
         private int russianMemes;
         private DriftAudio driftAudio;
         private readonly RandomChase randomChase = new RandomChase();
+        private readonly RandomChase randomPhrase = new RandomChase();
+        private readonly Random rng = new Random();
+        private PhraseBook phrases;
+        private Speaker speaker;
+        private SpeechAudio speechAudio;
+        private string windowsVoiceError;
         private float escProgress;
         private bool leftDown;
         private Vector2 leftDownAt;
@@ -202,6 +208,17 @@ namespace GooseDeluxe
                         "с DriftMusicFrom по DriftMusicTo секунду (настройки в GooseDeluxe.ini, по умолчанию 20–25).\r\n" +
                         "Если тут нет трека, играет встроенный фонк-бит.\r\n", new System.Text.UTF8Encoding(true));
                 }
+            });
+            Guard("phrases", () =>
+            {
+                phrases = new PhraseBook(Deluxe.ModDir);
+                ThreadPool.QueueUserWorkItem(_ => CleanVoiceFiles());
+                speechAudio = new SpeechAudio();
+                speaker = new Speaker(speechAudio, BuildUtterance);
+                SayTask.Arrived = () => { if (speaker != null) speaker.Release(); };
+                SayTask.StillTalking = () => speaker != null && speaker.Talking(clock.Elapsed.TotalSeconds);
+                if (cfg.Phrases) speaker.Prepare(phrases.Peek(), cfg.PhraseVoice); // the first phrase is ready at once
+                Deluxe.Log("phrases: " + phrases.Count + " in " + phrases.Path);
             });
             Guard("what's new", ShowWhatsNewOnce);
             if (cfg.Friends)
@@ -370,6 +387,8 @@ namespace GooseDeluxe
                     if (winter.AnythingToDraw) winter.DrawGround(g, now, screen, cfg.Scale);
 
                     animator.Asleep = Deluxe.Sleeping;
+                    animator.TalkOpen = speaker != null ? speaker.Mouth(clock.Elapsed.TotalSeconds) : 0f;
+                    animator.Talking = speaker != null && speaker.Talking(clock.Elapsed.TotalSeconds);
                     GoosePose mine = animator.Update(me, dt, now);
                     mine.carry = Deluxe.Carrying;
                     HatStyle myHat = cfg.Hat != HatStyle.None ? cfg.Hat : (newYear ? HatStyle.Santa : HatStyle.None);
@@ -394,6 +413,7 @@ namespace GooseDeluxe
                     particles.Update(dt, now);
                     particles.Draw(g, now);
                     winter.DrawAir(g);
+                    if (speaker != null && speaker.Busy) DrawBubble(g, mine, me, screen);
                     if (escProgress > 0.03f) DrawEscBar(g, escProgress);
                 }
             }
@@ -425,6 +445,7 @@ namespace GooseDeluxe
                 if (overlay != null) { overlay.Hide(); overlay.Dispose(); overlay = null; }
                 if (timer != null) timer.Stop();
                 if (driftAudio != null) driftAudio.Dispose();
+                if (speechAudio != null) speechAudio.Dispose();
             }
             catch { }
         }
@@ -447,9 +468,11 @@ namespace GooseDeluxe
             if (poller != null)
                 foreach (char key in poller.Poll(HotkeyLetters)) OnHotkey(key, "опрос клавиатуры");
             MaybeWelcome();
-            if (cfg.RandomChase && !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen && Deluxe.IsCurrentTask("Wander") &&
+            bool awake = !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen;
+            if (cfg.RandomChase && awake && Deluxe.IsCurrentTask("Wander") &&
                 randomChase.Due(clock.Elapsed.TotalSeconds, cfg.RandomChaseMinutes))
-                Deluxe.SetTask(ChaseCursorTask.Id, true);
+                StartChase();
+            UpdatePhrases(awake);
             if (driftAudio != null)
                 driftAudio.Update(animator.DriftAmount, !GooseSettings.SilenceSounds && !Deluxe.Sleeping && !Deluxe.HiddenForFullscreen,
                                   cfg, clock.Elapsed.TotalSeconds);
@@ -541,7 +564,7 @@ namespace GooseDeluxe
             welcomeAt = clock.Elapsed.TotalSeconds + 6;
             if (tray != null)
                 Deluxe.UiQueue.Enqueue(() => tray.Balloon("Гусь обновился до " + Version,
-                    "Нажми на гуся правой кнопкой мыши — там меню и пульт. Значок гуся — у часов (может прятаться под стрелкой ^)."));
+                    "Теперь я говорю фразы: нажми на меня — или «Сказать фразу» в меню (правая кнопка по гусю). Значок гуся — у часов."));
         }
 
         private void MaybeWelcome()
@@ -554,7 +577,9 @@ namespace GooseDeluxe
                 FromName = "гуся",
                 Text = "Привет! Я обновился: GooseDeluxe " + Version + ".\n\n" +
                        "Нажми на меня ПРАВОЙ кнопкой мыши — там меню и пульт с настройками. Или Ctrl+Alt+M.\n" +
-                       "Левой кнопкой — я гудну. Кучи листьев разлетаются от клика.\n\n" +
+                       "Левой кнопкой — я скажу фразу. Ещё — «Сказать фразу» в меню, а иногда я сам подойду и скажу.\n" +
+                       "Свои фразы можно дописать: в меню «Фразы гуся (дописать свои)».\n" +
+                       "Голос и как часто я болтаю — в пульте, вкладка «Настройки». Кучи листьев разлетаются от клика.\n\n" +
                        "Во вкладке «Проверка» видно, что у меня работает. Га!",
             };
             if (!Deluxe.SetTask(DeliverTask.Id, false)) DeliverTask.Pending = null;
@@ -632,7 +657,11 @@ namespace GooseDeluxe
                 leafClicks++;
                 return;
             }
-            if (animator.HasPose && GooseHit.IsOnGoose(animator.Pose, at)) HonkNow();
+            if (animator.HasPose && GooseHit.IsOnGoose(animator.Pose, at))
+            {
+                if (cfg.Phrases && speaker != null && !speaker.Talking(clock.Elapsed.TotalSeconds)) SayPhrase();
+                else HonkNow();
+            }
         }
 
         private void ShowGooseMenu()
@@ -663,6 +692,22 @@ namespace GooseDeluxe
             }
             toldAboutMailWhileAsleep = false;
 
+            if (x.Kind == IncomingKind.Command && (x.Command == GooseCommand.Phrase || x.Command == GooseCommand.Say))
+            {
+                // said by this goose, whoever asked for it (a friend's goose or a phone)
+                if (speaker == null || phrases == null || !cfg.Phrases)
+                {
+                    f.Inbox.TryDequeue(out x);
+                    if (now - lastHonkIn >= 3) { lastHonkIn = now; Deluxe.Honk(); } // phrases are off: just a honk
+                    return;
+                }
+                if (speaker.Busy || !Deluxe.IsCurrentTask("Wander") || now - lastDispatch < 2) return;
+                f.Inbox.TryDequeue(out x);
+                lastDispatch = now;
+                if (x.FromCode != null && x.FromCode == f.MyCode) selfTestBackAt = now;
+                Say(x.Command == GooseCommand.Say ? x.Text : phrases.Next(), true);
+                return;
+            }
             if (x.Guest != null)
             {
                 // another goose delivers in person, one visitor at a time
@@ -969,6 +1014,14 @@ namespace GooseDeluxe
                 case "NewYearHat":
                     UpdateSeason();
                     break;
+                case "Phrases":
+                case "PhraseVoice":
+                    if (speaker != null && phrases != null)
+                    {
+                        if (!cfg.Phrases) speaker.Stop();
+                        else speaker.Prepare(phrases.Peek(), cfg.PhraseVoice);
+                    }
+                    break;
             }
             cfg.Save(IniPath, key);
             Deluxe.Log("Setting " + key + "=" + cfg.ValueText(key));
@@ -1097,6 +1150,22 @@ namespace GooseDeluxe
             else add(DiagLevel.Ok, "Погоня за курсором", "примерно раз в " + cfg.RandomChaseMinutes.ToString("0.#") + " мин" +
                      (randomChase.NextAt > 0 ? ", следующая через " + Math.Max(0, (randomChase.NextAt - now) / 60).ToString("0.#") + " мин" : "") +
                      ". Сразу — «Погнаться за курсором» в пульте или в меню");
+            if (!cfg.Phrases) add(DiagLevel.Info, "Фразы", "выключены в настройках");
+            else if (phrases == null || speaker == null) add(DiagLevel.Warn, "Фразы", "не запустились — смотри журнал");
+            else
+            {
+                string voice = cfg.PhraseVoice == "Off" ? "без голоса, только облачко" : cfg.PhraseVoice == "Goose" ? "голос по-гусиному (га-га)" : WindowsVoiceLine();
+                string self = cfg.RandomPhrases
+                    ? "сам подходит примерно раз в " + cfg.RandomPhraseMinutes.ToString("0.#") + " мин" +
+                      (randomPhrase.NextAt > 0 ? " (следующий раз через " + Math.Max(0, (randomPhrase.NextAt - now) / 60).ToString("0.#") + " мин)" : "")
+                    : "сам не подходит (выключено)";
+                int count = phrases.Count;
+                add(count > 0 && speaker.LastError == null ? DiagLevel.Ok : DiagLevel.Warn, "Фразы",
+                    count + " фраз; " + voice + "; " + self + "; сказано: " + speaker.Said +
+                    (speaker.LastError != null ? ". Ошибка: " + speaker.LastError : "") +
+                    (GooseSettings.SilenceSounds ? ". Звук гуся выключен — только облачко" : "") +
+                    ". Сразу — «Сказать фразу» в меню или клик по гусю. Свои фразы — в " + phrases.Path);
+            }
             if (!cfg.NoRepeats) add(DiagLevel.Info, "Мемы и записки без повторов", "выключено в настройках");
             else add(DiagLevel.Ok, "Мемы и записки без повторов", "по кругу, без повторов подряд. Принесено мемов: " + forms.MemesShown + ", записок: " + forms.NotesShown +
                      (forms.LastMeme != null ? ". Последний мем: " + Path.GetFileName(forms.LastMeme) : "") +
@@ -1109,6 +1178,20 @@ namespace GooseDeluxe
                 if (line.Contains("failed") || line.Contains("Disabled") || line.Contains("Exception")) problems++;
             add(problems == 0 ? DiagLevel.Ok : DiagLevel.Warn, "Журнал", (problems == 0 ? "ошибок нет" : "есть сообщения об ошибках: " + problems) + " — " + Path.Combine(Deluxe.ModDir, "GooseDeluxe.log"));
             return list;
+        }
+
+        /// <summary>The Windows voice for the self-check. Separate, so a missing System.Speech can't break the rest.</summary>
+        private string WindowsVoiceLine()
+        {
+            try
+            {
+                string name = WindowsVoiceName();
+                if (name != null) return "голос: " + (speaker.LastVoice ?? "Windows «" + name + "», по-гусиному");
+                string why = windowsVoiceError ?? WindowsVoiceProblem();
+                return why == null ? "голос Windows ещё не проверен (проверится на первой фразе)"
+                                   : "голос по-гусиному, потому что " + why + ". Русский голос: Параметры → Время и язык → Речь → Добавить голоса";
+            }
+            catch (Exception ex) { return "голос по-гусиному (синтез речи Windows недоступен: " + ex.Message + ")"; }
         }
 
         public string LogTail(int lines)
@@ -1177,7 +1260,121 @@ namespace GooseDeluxe
             Process.Start("explorer.exe", "\"" + dir + "\"");
         }
 
-        public void ChaseCursor() { Wake(); Deluxe.SetTask(ChaseCursorTask.Id, true); }
+        public void ChaseCursor() { Wake(); StartChase(); }
+
+        /// <summary>The goose goes for the cursor — and now and then yells one of its phrases on the way.</summary>
+        private void StartChase()
+        {
+            Deluxe.SetTask(ChaseCursorTask.Id, true);
+            if (cfg.Phrases && speaker != null && phrases != null && !speaker.Busy && rng.NextDouble() < 0.5)
+                Say(phrases.Next(), false);
+        }
+
+        public void SayPhrase()
+        {
+            Wake();
+            if (phrases == null || speaker == null) { HonkNow(); return; }
+            Say(phrases.Next(), false);
+        }
+
+        public void OpenPhrases()
+        {
+            if (phrases == null) return;
+            Process.Start("notepad.exe", "\"" + phrases.Path + "\"");
+        }
+
+        /// <summary>Says a phrase; <paramref name="approach"/>: first walks up to the cursor.</summary>
+        private void Say(string text, bool approach)
+        {
+            if (string.IsNullOrEmpty(text)) { HonkNow(); return; }
+            double now = clock.Elapsed.TotalSeconds;
+            // only a goose that's just wandering stops (or walks up to the cursor) to talk; one that's busy — carrying
+            // a meme, a friend's note, chasing the cursor — says it on the go and carries on
+            bool stop = Deluxe.IsCurrentTask("Wander") || Deluxe.IsCurrentTask(SayTask.Id);
+            speaker.Say(text, cfg.PhraseVoice, !GooseSettings.SilenceSounds && cfg.PhraseVoice != "Off", (int)(cfg.PhraseVolume * 10), stop, now);
+            if (stop)
+            {
+                SayTask.Approach = approach;
+                if (!Deluxe.SetTask(SayTask.Id, false)) speaker.Release(); // no such task (can't happen): say it where it stands
+            }
+            if (cfg.Phrases) speaker.Prepare(phrases.Peek(), cfg.PhraseVoice); // the next one ready in advance
+        }
+
+        private void UpdatePhrases(bool awake)
+        {
+            if (speaker == null) return;
+            double now = clock.Elapsed.TotalSeconds;
+            if (!awake && speaker.Busy) speaker.Stop();
+            if (GooseSettings.SilenceSounds && speechAudio != null) speechAudio.Stop();
+            // the walk up to the cursor was cut short (another task, a call from the menu): say it anyway
+            if (speaker.Held && !Deluxe.IsCurrentTask(SayTask.Id)) speaker.Release();
+            speaker.Update(now);
+            if (cfg.Phrases && cfg.RandomPhrases && awake && !speaker.Busy && Deluxe.IsCurrentTask("Wander") &&
+                randomPhrase.Due(now, cfg.RandomPhraseMinutes))
+                Say(phrases.Next(), true);
+        }
+
+        /// <summary>Voice files of older versions, and any older than a week, are deleted at start.</summary>
+        private static void CleanVoiceFiles()
+        {
+            try
+            {
+                string root = Path.Combine(Path.GetTempPath(), "GooseDeluxe");
+                if (!Directory.Exists(root)) return;
+                foreach (string d in Directory.GetDirectories(root))
+                    if (Path.GetFileName(d) != Version) try { Directory.Delete(d, true); } catch { }
+                string mine = Path.Combine(root, Version);
+                if (Directory.Exists(mine))
+                    foreach (string f in Directory.GetFiles(mine, "*.wav"))
+                        if (File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-7)) try { File.Delete(f); } catch { }
+            }
+            catch (Exception ex) { Deluxe.Log("voice files cleanup: " + ex.Message); }
+        }
+
+        /// <summary>Makes the sound of a phrase (on a worker thread): the Windows voice made goose-like, or the
+        /// goose's honking when there's no Russian voice (or it's chosen).</summary>
+        private Utterance BuildUtterance(string text, string voice)
+        {
+            string dir = Path.Combine(Path.Combine(Path.GetTempPath(), "GooseDeluxe"), Version);
+            string file = Path.Combine(dir, Utterance.FileNameFor(voice, text));
+            if (voice == "Off") return Utterance.Silent(text, "без голоса");
+            if (voice == "Atomic")
+            {
+                try
+                {
+                    Utterance u = SayWithWindowsVoice(text, file);
+                    if (u != null) return u;
+                    windowsVoiceError = WindowsVoiceProblem();
+                }
+                catch (Exception ex)
+                {
+                    // no System.Speech at all (Wine) or a broken voice: the goose honks it instead
+                    windowsVoiceError = "синтез речи Windows не работает: " + ex.Message;
+                    Deluxe.Log("Windows voice failed: " + ex);
+                }
+                file = Path.Combine(dir, Utterance.FileNameFor("Goose", text));
+            }
+            return GooseVoice.Say(text, file);
+        }
+
+        // Kept apart (and never inlined): where System.Speech can't be loaded, only these fail — inside the callers' try.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static Utterance SayWithWindowsVoice(string text, string file) { return WindowsVoice.Say(text, file); }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string WindowsVoiceName() { return WindowsVoice.Name; }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string WindowsVoiceProblem() { return WindowsVoice.Problem; }
+
+        /// <summary>The bubble over the goose's head (its top) — or under its feet if there's no room above.</summary>
+        private void DrawBubble(Graphics g, GoosePose pose, GooseEntity me, Vector2 screen)
+        {
+            float top = Math.Min(pose.neckHeadPoint.y, Math.Min(pose.head1EndPoint.y, pose.head2EndPoint.y)) - 14f * cfg.Scale;
+            Vector2 head = new Vector2(pose.head2EndPoint.x * 0.5f + pose.neckHeadPoint.x * 0.5f, top);
+            Vector2 feet = new Vector2(me.position.x, me.position.y + 10f * cfg.Scale);
+            speaker.Draw(g, head, feet, screen, clock.Elapsed.TotalSeconds);
+        }
 
         public void TestDrift()
         {
@@ -1253,6 +1450,7 @@ namespace GooseDeluxe
             try { if (overlay != null) foreach (int id in hotkeys) UnregisterHotKey(overlay.Handle, id); } catch { }
             try { if (Deluxe.Friends != null) Deluxe.Friends.Stop(); } catch { }
             try { if (driftAudio != null) driftAudio.Dispose(); } catch { }
+            try { if (speechAudio != null) speechAudio.Dispose(); } catch { }
         }
 
         private static Icon AppIcon()

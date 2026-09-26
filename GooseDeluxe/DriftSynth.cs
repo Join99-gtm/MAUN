@@ -197,7 +197,7 @@ namespace GooseDeluxe
         }
 
         /// <summary>A small room (Schroeder: four combs, two all-passes), in place.</summary>
-        private static void Reverb(float[] x, int rate)
+        internal static void Reverb(float[] x, int rate)
         {
             double[] combMs = { 29.7, 37.1, 41.1, 43.7 };
             float[] outp = new float[x.Length];
@@ -247,7 +247,7 @@ namespace GooseDeluxe
             return r;
         }
 
-        private static float[] Normalize(float[] o, float peak)
+        internal static float[] Normalize(float[] o, float peak)
         {
             float max = 1e-6f;
             foreach (float s in o) max = Math.Max(max, Math.Abs(s));
@@ -281,7 +281,7 @@ namespace GooseDeluxe
             return path;
         }
 
-        private sealed class Biquad
+        internal sealed class Biquad
         {
             private double b0, b1, b2, a1, a2, x1, x2, y1, y2;
 
@@ -289,6 +289,19 @@ namespace GooseDeluxe
             {
                 double w = 2 * Math.PI * freq / rate, alpha = Math.Sin(w) / (2 * q), a0 = 1 + alpha, c = Math.Cos(w);
                 return new Biquad { b0 = (1 + c) / 2 / a0, b1 = -(1 + c) / a0, b2 = (1 + c) / 2 / a0, a1 = -2 * c / a0, a2 = (1 - alpha) / a0 };
+            }
+
+            public static Biquad LowPass(int rate, double freq, double q)
+            {
+                double w = 2 * Math.PI * freq / rate, alpha = Math.Sin(w) / (2 * q), a0 = 1 + alpha, c = Math.Cos(w);
+                return new Biquad { b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, b2 = (1 - c) / 2 / a0, a1 = -2 * c / a0, a2 = (1 - alpha) / a0 };
+            }
+
+            /// <summary>A bell boost (or cut, for negative dB) around <paramref name="freq"/>.</summary>
+            public static Biquad Peaking(int rate, double freq, double q, double db)
+            {
+                double A = Math.Pow(10, db / 40), w = 2 * Math.PI * freq / rate, alpha = Math.Sin(w) / (2 * q), c = Math.Cos(w), a0 = 1 + alpha / A;
+                return new Biquad { b0 = (1 + alpha * A) / a0, b1 = -2 * c / a0, b2 = (1 - alpha * A) / a0, a1 = -2 * c / a0, a2 = (1 - alpha / A) / a0 };
             }
 
             public static Biquad BandPass(int rate, double freq, double q)

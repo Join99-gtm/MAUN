@@ -32,6 +32,8 @@
     <Compile Include="../../GooseDeluxe/Net/*.cs" />
     <Compile Include="../../GooseDeluxe/Tasks/*.cs" />
     <Compile Include="../../GooseDeluxe/Seasons/*.cs" />
+    <Compile Include="../../GooseDeluxe/Speech/*.cs" />
+    <EmbeddedResource Include="../../GooseDeluxe/Фразы.txt" LogicalName="GooseDeluxe.Phrases.txt" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Drawing.Common" Version="6.0.0" />

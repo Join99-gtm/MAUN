@@ -7,7 +7,7 @@
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.7.1</Version>
+    <Version>0.8.0</Version>
     <Product>GooseDeluxe</Product>
     <Description>Graphics and animation overhaul mod for Desktop Goose 0.31</Description>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
@@ -16,6 +16,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="GooseDeluxe.ini" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Фразы.txt" LogicalName="GooseDeluxe.Phrases.txt" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
@@ -25,6 +26,7 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Speech" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="GooseModdingAPI">
       <HintPath>../lib/GooseModdingAPI.dll</HintPath>

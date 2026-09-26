@@ -11,7 +11,7 @@ namespace GooseDeluxe
         private readonly ContextMenuStrip menu;
         private readonly Controller c;
         private readonly ToolStripMenuItem pauseItem, muteItem, mouseItem;
-        private readonly ToolStripMenuItem friendsMenu, sendNoteItem, sendPicItem, visitItem, prankStealItem, prankMemeItem, prankMudItem;
+        private readonly ToolStripMenuItem friendsMenu, sendNoteItem, sendPicItem, visitItem, prankStealItem, prankMemeItem, prankMudItem, prankPhraseItem;
         private readonly ToolStripMenuItem myCodeItem, inviteItem, phoneItem, friendItem, statusItem;
 
         public Tray(Controller controller, Icon appIcon)
@@ -24,6 +24,8 @@ namespace GooseDeluxe
             Add(menu.Items, "Проверка…", null, (s, e) => ControlPanel.Open(c, 2));
             menu.Items.Add(new ToolStripSeparator());
             Add(menu.Items, "Позвать гуся", "Ctrl+Alt+G", (s, e) => c.Come());
+            ToolStripMenuItem say = Add(menu.Items, "Сказать фразу", null, (s, e) => c.SayPhrase());
+            say.Font = new Font(say.Font, FontStyle.Bold);
             Add(menu.Items, "Гудок", "Ctrl+Alt+H", (s, e) => c.HonkNow());
             Add(menu.Items, "Принести мем", null, (s, e) => c.RunGooseTask("CollectMeme"));
             Add(menu.Items, "Принести записку", null, (s, e) => c.RunGooseTask("CollectNotepad"));
@@ -31,6 +33,7 @@ namespace GooseDeluxe
             Add(menu.Items, "Украсть курсор", null, (s, e) => c.RunGooseTask("NabMouse"));
             Add(menu.Items, "Погнаться за курсором", null, (s, e) => c.ChaseCursor());
             Add(menu.Items, "Убрать листья", null, (s, e) => c.SweepLeaves());
+            Add(menu.Items, "Фразы гуся (дописать свои)…", null, (s, e) => c.OpenPhrases());
             menu.Items.Add(new ToolStripSeparator());
 
             friendsMenu = new ToolStripMenuItem("Гусь к другу");
@@ -41,6 +44,7 @@ namespace GooseDeluxe
             prankMemeItem = Add(friendsMenu.DropDownItems, "Принести другу мем", null, (s, e) => c.SendPrank(GooseCommand.Meme));
             prankMudItem = Add(friendsMenu.DropDownItems, "Наследить у друга", null, (s, e) => c.SendPrank(GooseCommand.Mud));
             prankStealItem = Add(friendsMenu.DropDownItems, "Украсть курсор у друга", null, (s, e) => c.SendPrank(GooseCommand.Steal));
+            prankPhraseItem = Add(friendsMenu.DropDownItems, "Сказать другу фразу", null, (s, e) => c.SendPrank(GooseCommand.Phrase));
             friendsMenu.DropDownItems.Add(new ToolStripSeparator());
             myCodeItem = Add(friendsMenu.DropDownItems, "Мой код", null, (s, e) => c.CopyMyCode());
             inviteItem = Add(friendsMenu.DropDownItems, "Скопировать приглашение для друга", null, (s, e) => c.CopyInvite());
@@ -103,7 +107,7 @@ namespace GooseDeluxe
             bool friend = f.HasFriend;
             string name = friend ? f.FriendName : "друг";
             sendNoteItem.Text = "Отправить записку " + (friend ? "(" + name + ")" : "") + "…";
-            foreach (ToolStripMenuItem i in new[] { sendPicItem, visitItem, prankMemeItem, prankMudItem, prankStealItem }) i.Enabled = friend;
+            foreach (ToolStripMenuItem i in new[] { sendPicItem, visitItem, prankMemeItem, prankMudItem, prankStealItem, prankPhraseItem }) i.Enabled = friend;
             myCodeItem.Text = "Мой код: " + GooseCode.Display(f.MyCode) + " (скопировать)";
             friendItem.Text = friend ? "Друг: " + f.FriendName + " — изменить…" : "Добавить друга…";
             statusItem.Text = f.Connected ? "Связь есть (" + HostOf(f.Server) + ")" : "Нет связи с " + HostOf(f.Server) + ", переподключаюсь…";

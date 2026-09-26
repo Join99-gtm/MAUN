@@ -21,6 +21,28 @@ namespace Tests
                 File.WriteAllText(args[1], new DeluxeConfig().ToIni(null), new UTF8Encoding(true));
                 return 0;
             }
+            if (args.Length == 2 && args[0] == "--tts-text")
+            {
+                Console.OutputEncoding = Encoding.UTF8;
+                Console.WriteLine(SpeechText.ForSynthesizer(args[1]));
+                return 0;
+            }
+            if (args.Length == 4 && args[0] == "--goose-voice") // a synthesizer's WAV (16-bit mono) through the mod's voice effect
+            {
+                byte[] b = File.ReadAllBytes(args[1]);
+                int rate = BitConverter.ToInt32(b, 24), data = 12;
+                while (data + 8 <= b.Length && Encoding.ASCII.GetString(b, data, 4) != "data") data += 8 + BitConverter.ToInt32(b, data + 4);
+                float[] pcm = new float[(b.Length - data - 8) / 2];
+                for (int i = 0; i < pcm.Length; i++) pcm[i] = BitConverter.ToInt16(b, data + 8 + 2 * i) / 32768f;
+                File.WriteAllBytes(args[2], DriftSynth.Wav(VoiceFx.Goose(pcm, rate, double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture)), rate));
+                return 0;
+            }
+            if (args.Length == 3 && args[0] == "--honk-voice")
+            {
+                double[] times;
+                File.WriteAllBytes(args[2], DriftSynth.Wav(GooseVoice.Render(args[1], out times), GooseVoice.Rate));
+                return 0;
+            }
             Directory.CreateDirectory(Tmp);
             Deluxe.ModDir = Tmp;
             Run("Deck (honest random)", TestDeck);
@@ -40,6 +62,14 @@ namespace Tests
             Run("Мемы и записки без повторов, клик по куче листьев", TestNoRepeatsAndLeafHit);
             Run("Дрифт: дым из-под лап, визг шин, фонк", TestDrift);
             Run("Погоня за курсором", TestChase);
+            Run("Фразы гуся: файл, круг без повторов, свои фразы", SpeechTests.Phrases);
+            Run("Фразы гуся: слоги и чтение для голоса Windows", SpeechTests.Text);
+            Run("Фразы гуся: команды «фраза» и «скажи …»", SpeechTests.Commands);
+            Run("Фразы гуся: голос по-гусиному", SpeechTests.GooseVoiceTest);
+            Run("Фразы гуся: голос как в Atomic Heart (обработка)", SpeechTests.AtomicVoice);
+            Run("Фразы гуся: облачко", SpeechTests.Bubble);
+            Run("Фразы гуся: диктор (фон, звук, клюв, пауза)", SpeechTests.SpeakerTest);
+            Run("Фразы гуся: подходит к курсору и говорит", SpeechTests.SayTaskTest);
             string gooseDir = args.Length > 1 ? args[1] : null;
             if (gooseDir != null) Run("Seasons: the real Autumn mod's leaves", () => TestAutumnMod(gooseDir));
             if (gooseDir != null) Run("Мемы по-русски (настоящие мемы гуся)", () => TestRussianMemes(gooseDir));
@@ -219,7 +249,7 @@ namespace Tests
                 if (FriendProtocol.ParseCommand(kv.Key) != kv.Value) { allOk = false; Console.WriteLine("      '" + kv.Key + "' -> " + FriendProtocol.ParseCommand(kv.Key)); }
             Check("command words (" + cmds.Count + " cases)", allOk);
             foreach (GooseCommand c in Enum.GetValues(typeof(GooseCommand)))
-                if (c != GooseCommand.None && FriendProtocol.ParseCommand(FriendProtocol.CommandWord(c)) != c) allOk = false;
+                if (c != GooseCommand.None && c != GooseCommand.Say && FriendProtocol.ParseCommand(FriendProtocol.CommandWord(c)) != c) allOk = false; // «скажи» comes with its text
             Check("every command word parses back", allOk);
 
             string tags = FriendProtocol.Tags("ABCDEFGHJKMN", new[] { "#FFFFFF", "#ff0000", "#000000" }, HatStyle.Santa);

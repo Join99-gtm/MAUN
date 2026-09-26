@@ -31,6 +31,15 @@ namespace GooseDeluxe
             return last;
         }
 
+        /// <summary>The item <see cref="Next"/> will return, without taking it (to get it ready in advance).</summary>
+        public string Peek(IList<string> items)
+        {
+            if (items == null || items.Count == 0) return null;
+            if (!SameSet(items)) Reset(items);
+            if (next >= order.Count) Shuffle();
+            return order[next];
+        }
+
         private bool SameSet(IList<string> items)
         {
             if (items.Count != known.Count) return false;

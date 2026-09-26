@@ -73,6 +73,10 @@ namespace GooseDeluxe
         void TestDrift();
         /// <summary>The goose chases the mouse cursor for a few seconds (as it now and then does on its own).</summary>
         void ChaseCursor();
+        /// <summary>The goose says a random phrase (text in a bubble, and its voice).</summary>
+        void SayPhrase();
+        /// <summary>Opens Фразы.txt in Notepad: the user adds their own phrases.</summary>
+        void OpenPhrases();
 
         // the goose's own settings (config.ini)
         bool GooseSettingsAvailable { get; }

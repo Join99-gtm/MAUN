@@ -75,6 +75,10 @@ namespace GooseDeluxe
         private float nextZTime;
         private float sleepBlend;
 
+        /// <summary>0..1: the beak opening while the goose says a phrase (set every frame by the caller).</summary>
+        public float TalkOpen;
+        /// <summary>The goose is saying a phrase: it doesn't yawn or preen in between the words.</summary>
+        public bool Talking;
         /// <summary>Visitors honk when they arrive, not when they are created.</summary>
         public bool SilentStart;
         /// <summary>Drawn asleep: eyes shut, head down, floating "z".</summary>
@@ -193,11 +197,11 @@ namespace GooseDeluxe
             bool honking = now < honkEndTime;
             float honkP = honking ? 1f - (honkEndTime - now) / HonkDuration : 0f;
             float honkE = honking ? (float)Math.Sin(honkP * Math.PI) : 0f;
-            float beakOpen = cfg.HonkAnimation ? honkE : 0f;
+            float beakOpen = cfg.HonkAnimation ? Math.Max(honkE, TalkOpen * 0.85f) : 0f;
             float puff = cfg.HonkAnimation ? honkE * 0.18f : 0f;
 
             // --- idle animations ---
-            bool isIdle = !Asleep && speed < 8f && !honking && (wanderTaskIndex < 0 || g.currentTask == wanderTaskIndex);
+            bool isIdle = !Asleep && speed < 8f && !honking && !Talking && (wanderTaskIndex < 0 || g.currentTask == wanderTaskIndex);
             float stretchExtra = 0f;
             float headShake = 0f;
             float preenYaw = 0f;
