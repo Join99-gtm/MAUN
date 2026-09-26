@@ -24,7 +24,7 @@ namespace Tests
             {
                 string builtIn = PhraseBook.DefaultText();
                 List<string> all = PhraseBook.Parse(builtIn);
-                Check("в мод вшиты 30 фраз пользователя", all.Count == 30, all.Count.ToString());
+                Check("в мод вшиты 50 фраз пользователя", all.Count == 50, all.Count.ToString());
                 Check("первая — «Инженер ПТО! Не ПТО, а хуй в пальто!»", all.Count > 0 && all[0] == "Инженер ПТО! Не ПТО, а хуй в пальто!");
                 Check("комментарии (#) гусь не говорит", all.All(p => !p.StartsWith("#")));
 
@@ -32,21 +32,21 @@ namespace Tests
                 string file = Path.Combine(dir, PhraseBook.FileName);
                 byte[] head = File.ReadAllBytes(file).Take(3).ToArray();
                 Check("Фразы.txt создаётся рядом с модом (UTF-8 с BOM, для Блокнота)", File.Exists(file) && head.SequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF }));
-                Check("в файле те же 30 фраз", book.Count == 30, book.Count.ToString());
+                Check("в файле те же 50 фраз", book.Count == 50, book.Count.ToString());
 
                 HashSet<string> round = new HashSet<string>();
                 string prev = null;
                 bool noDouble = true, peekOk = true;
-                for (int i = 0; i < 90; i++)
+                for (int i = 0; i < 150; i++)
                 {
                     string peek = book.Peek();
                     string p = book.Next();
                     if (peek != p) peekOk = false;
                     if (p == prev) noDouble = false;
                     prev = p;
-                    if (i < 30) round.Add(p);
+                    if (i < 50) round.Add(p);
                 }
-                Check("по кругу: за 30 раз — все 30 разных", round.Count == 30, round.Count.ToString());
+                Check("по кругу: за 50 раз — все 50 разных", round.Count == 50, round.Count.ToString());
                 Check("одна и та же два раза подряд — никогда (и на стыке кругов)", noDouble);
                 Check("«следующая» заранее совпадает с той, что будет сказана", peekOk);
 
@@ -140,7 +140,7 @@ namespace Tests
                 for (double t = 0; t < u.Duration; t += 0.02) if (u.MouthAt(t) > 0.3f) open++;
                 if (open < 5) mouth = false;
             }
-            Check("гусиный голос: все 30 фраз от 1 до 12 с", minD > 1 && maxD < 12, minD.ToString("0.0") + "–" + maxD.ToString("0.0") + " с");
+            Check("гусиный голос: все фразы от 1 до 12 с", minD > 1 && maxD < 12, minD.ToString("0.0") + "–" + maxD.ToString("0.0") + " с");
             Check("гусиный голос: без NaN и щелчков за пределами", finite);
             Check("гусиный голос: громкость ровная (пик 0,85)", loud);
             Check("текст в облачке появляется по порядку и к концу — весь", monotonic && full);

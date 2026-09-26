@@ -135,9 +135,45 @@ namespace GooseDeluxe
             MyName = kv.TryGetValue("MyName", out v) && v.Length > 0 ? v : SafeUserName();
             FriendCode = kv.TryGetValue("FriendCode", out v) ? GooseCode.Normalize(v) : null;
             FriendName = kv.TryGetValue("FriendName", out v) && v.Length > 0 ? v : "Друг";
-            bool fresh = MyCode == null;
+            // The code must be this computer's own. A goose folder copied to someone else carries this file along —
+            // then both geese had one code (it happened: «у меня и у друга тот же код»). The file remembers whose
+            // computer it was made on; files from before 0.8.3 don't, so those get a new code once too.
+            string here = MachineId(), madeOn;
+            kv.TryGetValue("Machine", out madeOn);
+            bool copied = MyCode != null && madeOn != here;
+            if (copied)
+            {
+                Deluxe.Log("GooseFriend.ini " + (string.IsNullOrEmpty(madeOn) ? "from an older version" : "copied from another computer") + ": a new goose code");
+                if (!string.IsNullOrEmpty(madeOn))
+                {
+                    // someone else's file: their name and their friend aren't ours
+                    MyName = SafeUserName();
+                    FriendCode = null;
+                    FriendName = "Друг";
+                }
+            }
+            bool fresh = MyCode == null || copied;
             if (fresh) MyCode = GooseCode.Generate();
+            machine = here;
             if (fresh || !File.Exists(storePath)) Save();
+        }
+
+        private string machine;
+
+        /// <summary>This computer and Windows user, as a short hash (Windows' MachineGuid, computer and user name).</summary>
+        private static string MachineId()
+        {
+            string guid = "";
+            try
+            {
+                using (Microsoft.Win32.RegistryKey root = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64))
+                using (Microsoft.Win32.RegistryKey k = root.OpenSubKey("SOFTWARE\\Microsoft\\Cryptography"))
+                    if (k != null) guid = Convert.ToString(k.GetValue("MachineGuid"));
+            }
+            catch { }
+            string raw = (guid + "|" + Environment.MachineName + "|" + Environment.UserName).ToLowerInvariant();
+            using (System.Security.Cryptography.SHA1 sha = System.Security.Cryptography.SHA1.Create())
+                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(raw)), 0, 8).Replace("-", "").ToLowerInvariant();
         }
 
         public void Save()
@@ -150,6 +186,8 @@ namespace GooseDeluxe
                 sb.AppendLine("MyName=" + (MyName ?? ""));
                 sb.AppendLine("FriendCode=" + (FriendCode != null ? GooseCode.Display(FriendCode) : ""));
                 sb.AppendLine("FriendName=" + (FriendName ?? ""));
+                sb.AppendLine("; чей это компьютер: если папку гуся скопируют на другой, там у гуся будет свой код");
+                sb.AppendLine("Machine=" + (machine ?? MachineId()));
                 File.WriteAllText(storePath, sb.ToString(), new UTF8Encoding(true));
             }
             catch (Exception ex) { Deluxe.Log("GooseFriend.ini not saved: " + ex.Message); }
