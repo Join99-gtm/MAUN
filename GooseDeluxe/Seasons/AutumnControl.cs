@@ -113,19 +113,36 @@ namespace GooseDeluxe
             return best;
         }
 
+        /// <summary>Kicks every untouched pile at once. Returns how many.</summary>
+        public int KickAll(float now)
+        {
+            if (!CanKick) return 0;
+            int n = 0;
+            foreach (object p in piles)
+            {
+                if (p == null || (float)kickedField.GetValue(p) > 0f) continue;
+                Kick(p, now);
+                n++;
+            }
+            return n;
+        }
+
+        private void Kick(object p, float now)
+        {
+            Vector2 pos = (Vector2)posField.GetValue(p);
+            kickMethod.Invoke(p, new object[] { new Vector2(0f, 0f), pos, ClickKickStrength });
+            kickedField.SetValue(p, Math.Max(now - (8f - SecondsLeftAfterClick), 0.001f));
+        }
+
         /// <summary>Kicks the pile under the point: the leaves fly up and apart. Returns false if there is none.</summary>
         public bool KickAt(Vector2 point, float now)
         {
             int i = PileAt(point);
             if (i < 0) return false;
-            object p = piles[i];
-            Vector2 pos = (Vector2)posField.GetValue(p);
-            // no direction: the leaves burst out in all directions, harder than a charging goose kicks them
-            kickMethod.Invoke(p, new object[] { new Vector2(0f, 0f), pos, ClickKickStrength });
-            // The Autumn mod removes a kicked pile 10 s after the kick, fading over the last 2 s.
-            // Pretend the kick was earlier so the leaves are gone soon after they land.
-            float kickedAt = now - (8f - SecondsLeftAfterClick);
-            kickedField.SetValue(p, Math.Max(kickedAt, 0.001f));
+            // no direction: the leaves burst out in all directions, harder than a charging goose kicks them.
+            // The Autumn mod removes a kicked pile 10 s after the kick, fading over the last 2 s; Kick
+            // pretends the kick was earlier so the leaves are gone soon after they land.
+            Kick(piles[i], now);
             return true;
         }
     }

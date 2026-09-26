@@ -50,7 +50,8 @@ namespace GooseDeluxe
         public bool ClickLeafPiles = true;
         public bool NoRepeats = true;
         public bool RussianMemes = true;
-        public float EscHoldSeconds = 1.5f;
+        public float EscHoldSeconds = 3f;
+        public bool LeafPiles = true;
 
         // friends (0.2)
         public bool Friends = true;
@@ -64,7 +65,7 @@ namespace GooseDeluxe
             "FixSpeed", "HonestRandom", "PauseInFullscreen", "Tray", "Hotkeys", "Language", "RussianNotes",
             "Friends", "FriendCanStealMouse", "NtfyServer",
             "Seasons", "WinterScarf", "NewYearHat",
-            "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds",
+            "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds", "LeafPiles",
         };
 
         public static DeluxeConfig Load(string path)
@@ -118,6 +119,7 @@ namespace GooseDeluxe
             c.NoRepeats = GetBool(kv, "NoRepeats", c.NoRepeats);
             c.RussianMemes = GetBool(kv, "RussianMemes", c.RussianMemes);
             c.EscHoldSeconds = Clamp(GetFloat(kv, "EscHoldSeconds", c.EscHoldSeconds), 0.5f, 10f);
+            c.LeafPiles = GetBool(kv, "LeafPiles", c.LeafPiles);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -184,6 +186,7 @@ namespace GooseDeluxe
             add("ClickLeafPiles", B(ClickLeafPiles), "Кучи листьев разлетаются от клика мышкой");
             add("NoRepeats", B(NoRepeats), "Мемы и записки гуся по кругу, без повторов");
             add("EscHoldSeconds", EscHoldSeconds.ToString(CultureInfo.InvariantCulture), "Сколько секунд держать ESC, чтобы выгнать гуся (0.5 - 10; у самого гуся было около 8)");
+            add("LeafPiles", B(LeafPiles), "Кучи листьев осеннего мода (False — их не будет совсем)");
             add("RussianMemes", B(RussianMemes), "Надписи на мемах гуся по-русски (оригиналы лежат в Assets\\Images\\Memes\\en)");
             return sb.ToString();
         }

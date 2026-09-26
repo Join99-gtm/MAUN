@@ -56,6 +56,8 @@ namespace UiPreview
         public void TestConnection(Action<string> report) { report("Записка ушла на ntfy.sh."); }
         public void TestSnow() { Calls.Add("TestSnow"); }
         public void OpenModFolder() { }
+        public void SweepLeaves() { Calls.Add("SweepLeaves"); }
+        public void OpenMemesFolder() { Calls.Add("OpenMemesFolder"); }
     }
 
     internal static class Program
@@ -125,7 +127,7 @@ namespace UiPreview
             Console.WriteLine("FAIL friend line empty on open"); fails++;
             friendOk:
             Application.DoEvents();
-            string[] expect = { "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "Pause True",
+            string[] expect = { "Come", "Honk", "Task CollectMeme", "Task CollectNotepad", "Task TrackMud", "Task NabMouse", "SweepLeaves", "Pause True",
                                 "SendNote", "SendPicture", "Prank Honk", "Prank Meme", "Prank Mud", "Prank Steal", "TestNote", "TestSnow" };
             foreach (Button b in buttons)
             {

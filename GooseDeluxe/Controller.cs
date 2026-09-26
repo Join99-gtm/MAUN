@@ -47,6 +47,9 @@ namespace GooseDeluxe
         private readonly GooseForms forms = new GooseForms();
         private int russianMemes;
         private float escProgress;
+        private bool leftDown;
+        private Vector2 leftDownAt;
+        private double lastOverlayClickAt = -1;
         private static FieldInfo gooseEscCounter;
         private static bool gooseEscCounterLooked;
         private static readonly Font EscFont = new Font("Segoe UI", 11f, FontStyle.Bold);
@@ -227,7 +230,7 @@ namespace GooseDeluxe
         /// <summary>Outside autumn the Autumn mod's leaf piles are removed as soon as it makes them.</summary>
         private void SuppressLeaves()
         {
-            if (autumn == null || season == Season.Autumn || season == Season.None) return;
+            if (autumn == null || (cfg.LeafPiles && (season == Season.Autumn || season == Season.None))) return;
             try { autumn.Suppress(); }
             catch (Exception ex) { Deluxe.Log("Leaf control disabled: " + ex.Message); autumn = null; }
         }
@@ -310,6 +313,7 @@ namespace GooseDeluxe
         {
             if (!hooked || failed) return;
             if (EscHeldLongEnough()) { Exit(); return; }
+            PollPileClick();
             try
             {
                 float now = Time.time;
@@ -576,8 +580,29 @@ namespace GooseDeluxe
             }
         }
 
+        /// <summary>
+        /// Backup for clicks on leaf piles: our window normally catches them (see DrawLeafHitAreas), but if the
+        /// click went past it, the left button's press and release over an untouched pile still kick it.
+        /// </summary>
+        private void PollPileClick()
+        {
+            if (!LeafClicksOn) { leftDown = false; return; }
+            bool down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+            if (down == leftDown) return;
+            leftDown = down;
+            Point cur = Cursor.Position;
+            Rectangle b = MainWindowBounds();
+            Vector2 at = new Vector2(cur.X - b.X, cur.Y - b.Y);
+            if (down) { leftDownAt = at; return; }
+            if (clock.Elapsed.TotalSeconds - lastOverlayClickAt < 0.3) return; // our window got this one
+            if (Vector2.Distance(at, leftDownAt) > 6f) return;                   // a drag, not a click
+            try { if (autumn.KickAt(at, Time.time)) leafClicks++; }
+            catch (Exception ex) { leafClicksBroken = true; Deluxe.Log("leaf clicks disabled: " + ex.Message); }
+        }
+
         private void OnLeftClick(Point client)
         {
+            lastOverlayClickAt = clock.Elapsed.TotalSeconds;
             Vector2 at = new Vector2(client.X, client.Y);
             if (LeafClicksOn && autumn.KickAt(at, Time.time))
             {
@@ -1007,6 +1032,7 @@ namespace GooseDeluxe
             {
                 if (!cfg.ClickLeafPiles) add(DiagLevel.Info, "Кучи листьев кликом", "выключено в настройках");
                 else if (!autumn.CanKick || leafClicksBroken) add(DiagLevel.Warn, "Кучи листьев кликом", "не работает с этой версией осеннего мода");
+                else if (!cfg.LeafPiles) add(DiagLevel.Info, "Кучи листьев кликом", "кучи листьев выключены в настройках");
                 else add(DiagLevel.Ok, "Кучи листьев кликом", "нажми на кучу — листья разлетятся" + (leafClicks > 0 ? ". Разбросано куч: " + leafClicks : ""));
             }
             if (season == Season.Winter)
@@ -1103,6 +1129,25 @@ namespace GooseDeluxe
         public void OpenModFolder()
         {
             Process.Start("explorer.exe", "\"" + Deluxe.ModDir + "\"");
+        }
+
+        public void OpenMemesFolder()
+        {
+            string dir = Path.Combine(Path.Combine(Path.Combine(Deluxe.GooseDir ?? "", "Assets"), "Images"), "Memes");
+            Process.Start("explorer.exe", "\"" + dir + "\"");
+        }
+
+        public void SweepLeaves()
+        {
+            if (autumn == null) return;
+            if (Deluxe.Sleeping || Engine.Frozen)
+            {
+                // the goose's engine is stopped, so the leaves couldn't fly: just take them away
+                autumn.Suppress();
+                Engine.ClearFrozenCanvas();
+                return;
+            }
+            leafClicks += autumn.KickAll(Time.time);
         }
 
         // ---------------------------------------------------------------- hotkeys & cleanup

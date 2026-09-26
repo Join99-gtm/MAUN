@@ -65,6 +65,9 @@ namespace GooseDeluxe
         bool Paused { get; }
         void TogglePause();
         void Exit();
+        /// <summary>All leaf piles fly away at once.</summary>
+        void SweepLeaves();
+        void OpenMemesFolder();
 
         // the goose's own settings (config.ini)
         bool GooseSettingsAvailable { get; }

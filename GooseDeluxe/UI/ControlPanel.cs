@@ -122,6 +122,8 @@ namespace GooseDeluxe
             main.Controls.Add(Btn("Принести записку", () => c.RunGooseTask("CollectNotepad")));
             main.Controls.Add(Btn("Наследить грязью", () => c.RunGooseTask("TrackMud")));
             main.Controls.Add(Btn("Украсть курсор", () => c.RunGooseTask("NabMouse")));
+            main.Controls.Add(Btn("Убрать листья", c.SweepLeaves));
+            main.Controls.Add(Btn("Папка мемов (добавить свои)", c.OpenMemesFolder));
             pauseButton = Btn("Пауза  (Ctrl+Alt+P)", c.TogglePause);
             main.Controls.Add(pauseButton);
             main.Controls.Add(Btn("Выгнать гуся", () =>
@@ -247,6 +249,7 @@ namespace GooseDeluxe
             behave.Controls.Add(Setting("Честный рандом проделок", "HonestRandom"));
             behave.Controls.Add(Setting("Мемы и записки без повторов", "NoRepeats"));
             behave.Controls.Add(Setting("Кучи листьев убираются кликом", "ClickLeafPiles"));
+            behave.Controls.Add(Setting("Кучи листьев осенью", "LeafPiles"));
 
             // --- animation
             TableLayoutPanel anim = Grid(2);
