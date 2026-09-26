@@ -51,9 +51,12 @@ namespace GooseDeluxe
         private readonly RandomChase randomPhrase = new RandomChase();
         private readonly Random rng = new Random();
         private PhraseBook phrases;
+        private Recordings recordings;
+        private int importedVoices;
         private Speaker speaker;
         private SpeechAudio speechAudio;
         private string windowsVoiceError;
+        private string recordingError;
         private float escProgress;
         private bool leftDown;
         private Vector2 leftDownAt;
@@ -212,13 +215,15 @@ namespace GooseDeluxe
             Guard("phrases", () =>
             {
                 phrases = new PhraseBook(Deluxe.ModDir);
-                ThreadPool.QueueUserWorkItem(_ => CleanVoiceFiles());
+                recordings = new Recordings(VoiceFolder);
+                EnsureVoiceFolder();
+                ThreadPool.QueueUserWorkItem(_ => { CleanVoiceFiles(); ImportVoices(); });
                 speechAudio = new SpeechAudio();
                 speaker = new Speaker(speechAudio, BuildUtterance);
                 SayTask.Arrived = () => { if (speaker != null) speaker.Release(); };
                 SayTask.StillTalking = () => speaker != null && speaker.Talking(clock.Elapsed.TotalSeconds);
-                if (cfg.Phrases) speaker.Prepare(phrases.Peek(), cfg.PhraseVoice); // the first phrase is ready at once
-                Deluxe.Log("phrases: " + phrases.Count + " in " + phrases.Path);
+                PrepareNext(); // the first phrase is ready at once
+                Deluxe.Log("phrases: " + phrases.Count + " in " + phrases.Path + "; recordings: " + recordings.Files);
             });
             Guard("what's new", ShowWhatsNewOnce);
             if (cfg.Friends)
@@ -705,7 +710,8 @@ namespace GooseDeluxe
                 f.Inbox.TryDequeue(out x);
                 lastDispatch = now;
                 if (x.FromCode != null && x.FromCode == f.MyCode) selfTestBackAt = now;
-                Say(x.Command == GooseCommand.Say ? x.Text : phrases.Next(), true);
+                if (x.Command == GooseCommand.Say) Say(x.Text, VoiceForText(), true, false);
+                else SayKey(NextKey(), true);
                 return;
             }
             if (x.Guest != null)
@@ -1019,7 +1025,7 @@ namespace GooseDeluxe
                     if (speaker != null && phrases != null)
                     {
                         if (!cfg.Phrases) speaker.Stop();
-                        else speaker.Prepare(phrases.Peek(), cfg.PhraseVoice);
+                        else PrepareNext();
                     }
                     break;
             }
@@ -1154,7 +1160,7 @@ namespace GooseDeluxe
             else if (phrases == null || speaker == null) add(DiagLevel.Warn, "Фразы", "не запустились — смотри журнал");
             else
             {
-                string voice = cfg.PhraseVoice == "Off" ? "без голоса, только облачко" : cfg.PhraseVoice == "Goose" ? "голос по-гусиному (га-га)" : WindowsVoiceLine();
+                string voice = cfg.PhraseVoice == "Off" ? "без голоса, только облачко" : VoiceLine();
                 string self = cfg.RandomPhrases
                     ? "сам подходит примерно раз в " + cfg.RandomPhraseMinutes.ToString("0.#") + " мин" +
                       (randomPhrase.NextAt > 0 ? " (следующий раз через " + Math.Max(0, (randomPhrase.NextAt - now) / 60).ToString("0.#") + " мин)" : "")
@@ -1178,6 +1184,21 @@ namespace GooseDeluxe
                 if (line.Contains("failed") || line.Contains("Disabled") || line.Contains("Exception")) problems++;
             add(problems == 0 ? DiagLevel.Ok : DiagLevel.Warn, "Журнал", (problems == 0 ? "ошибок нет" : "есть сообщения об ошибках: " + problems) + " — " + Path.Combine(Deluxe.ModDir, "GooseDeluxe.log"));
             return list;
+        }
+
+        private string VoiceLine()
+        {
+            recordings.Refresh(phrases.All, clock.Elapsed.TotalSeconds);
+            List<string> keys = recordings.Keys();
+            List<string> nameless = recordings.NamelessFiles();
+            string rec = recordings.Files == 0 ? "готовых записей нет (папка «Голос» пуста)"
+                : "готовые записи: " + recordings.Files + " файлов для " + keys.Count + " фраз" +
+                  (nameless.Count > 0 ? " (без фразы в имени: " + string.Join(", ", nameless.ToArray()) + ")" : "") +
+                  (importedVoices > 0 ? ", " + importedVoices + " новых забрано из Документы\\Codex" : "") +
+                  (recordingError != null ? ". Не читается: " + recordingError : "");
+            if (cfg.PhraseVoice == "Records")
+                return recordings.Files > 0 ? rec + " — гусь говорит только их" : rec + " — пока говорит по-гусиному; записи — в меню «Папка голоса»";
+            return rec + "; фразы без записи — " + (cfg.PhraseVoice == "Goose" ? "по-гусиному (га-га)" : WindowsVoiceLine());
         }
 
         /// <summary>The Windows voice for the self-check. Separate, so a missing System.Speech can't break the rest.</summary>
@@ -1267,14 +1288,132 @@ namespace GooseDeluxe
         {
             Deluxe.SetTask(ChaseCursorTask.Id, true);
             if (cfg.Phrases && speaker != null && phrases != null && !speaker.Busy && rng.NextDouble() < 0.5)
-                Say(phrases.Next(), false);
+                SayKey(NextKey(), false);
         }
 
         public void SayPhrase()
         {
             Wake();
             if (phrases == null || speaker == null) { HonkNow(); return; }
-            Say(phrases.Next(), false);
+            SayKey(NextKey(), false);
+        }
+
+        private string VoiceFolder { get { return Path.Combine(Deluxe.ModDir, "Голос"); } }
+
+        public void OpenVoiceFolder()
+        {
+            EnsureVoiceFolder();
+            Process.Start("explorer.exe", "\"" + VoiceFolder + "\"");
+        }
+
+        private void EnsureVoiceFolder()
+        {
+            try
+            {
+                Directory.CreateDirectory(VoiceFolder);
+                string help = Path.Combine(VoiceFolder, "Как добавить свои записи.txt");
+                if (!File.Exists(help))
+                    File.WriteAllText(help,
+                        "Сюда кладутся готовые записи фраз гуся: WAV или MP3.\r\n\r\n" +
+                        "Назови файл словами фразы — например «Где акты скрытых работ.wav» или «Остановите_стройку_02.wav»:\r\n" +
+                        "гусь сам поймёт, какая это фраза из Фразы.txt, и покажет её в облачке. Если такой фразы в списке\r\n" +
+                        "нет, в облачке будет имя файла. Несколько файлов одной фразы — это дубли, гусь говорит их по очереди.\r\n\r\n" +
+                        "Пока тут есть записи, гусь говорит только их (пульт → «Настройки» → «Голос фраз» — можно иначе).\r\n" +
+                        "Новые файлы из папки Документы\\Codex\\…\\outputs гусь забирает сюда сам при запуске.\r\n",
+                        new System.Text.UTF8Encoding(true));
+            }
+            catch (Exception ex) { Deluxe.Log("voice folder: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// Voice lines the user makes elsewhere land in Documents\Codex\…\outputs (they said so): new audio files
+        /// from there are copied into «Голос» at start (never deleted or overwritten). Runs on a worker thread.
+        /// </summary>
+        private void ImportVoices()
+        {
+            try
+            {
+                string codex = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Codex");
+                if (!Directory.Exists(codex)) return;
+                List<string> outputs = new List<string>();
+                FindOutputs(codex, 0, outputs);
+                int copied = 0;
+                foreach (string dir in outputs)
+                    foreach (string f in Directory.GetFiles(dir))
+                    {
+                        if (Array.IndexOf(Recordings.Extensions, Path.GetExtension(f).ToLowerInvariant()) < 0) continue;
+                        FileInfo fi = new FileInfo(f);
+                        if (fi.Length > 50L * 1024 * 1024) continue;
+                        string to = Path.Combine(VoiceFolder, fi.Name);
+                        if (File.Exists(to))
+                        {
+                            if (new FileInfo(to).Length == fi.Length) continue;
+                            to = Path.Combine(VoiceFolder, Path.GetFileNameWithoutExtension(fi.Name) + " (" + Path.GetFileName(dir.TrimEnd('\\', '/')) + "-" + fi.Length + ")" + fi.Extension);
+                            if (File.Exists(to)) continue;
+                        }
+                        File.Copy(f, to);
+                        copied++;
+                    }
+                importedVoices = copied;
+                if (copied > 0) Deluxe.Log("voice lines imported from " + codex + ": " + copied);
+            }
+            catch (Exception ex) { Deluxe.Log("voice import: " + ex.Message); }
+        }
+
+        private static void FindOutputs(string dir, int depth, List<string> found)
+        {
+            if (depth > 4) return;
+            string[] subs;
+            try { subs = Directory.GetDirectories(dir); } catch { return; }
+            foreach (string d in subs)
+            {
+                if (Path.GetFileName(d).Equals("outputs", StringComparison.OrdinalIgnoreCase)) found.Add(d);
+                FindOutputs(d, depth + 1, found);
+            }
+        }
+
+        /// <summary>What the goose may say: with «Только готовые записи» (Records) and any recordings — only the
+        /// recorded phrases; otherwise every phrase in the file, plus recordings named like phrases of their own.</summary>
+        private IList<string> Pool()
+        {
+            IList<string> all = phrases.All;
+            if (recordings == null) return all;
+            recordings.Refresh(all, clock.Elapsed.TotalSeconds);
+            List<string> recorded = recordings.Keys();
+            if (cfg.PhraseVoice == "Records" && recorded.Count > 0) return recorded;
+            List<string> pool = new List<string>(all);
+            foreach (string k in recorded) if (!pool.Contains(k)) pool.Add(k);
+            return pool;
+        }
+
+        private string NextKey() { return phrases == null ? null : phrases.Next(Pool()); }
+
+        /// <summary>The voice for a text with no recording: «Records» means the user doesn't want the Windows voice —
+        /// then the goose honks it.</summary>
+        private string VoiceForText() { return cfg.PhraseVoice == "Records" ? "Goose" : cfg.PhraseVoice; }
+
+        private Recordings.Take TakeFor(string key, bool advance)
+        {
+            return recordings != null && key != null && cfg.PhraseVoice != "Off" ? recordings.NextTake(key, advance) : null;
+        }
+
+        /// <summary>Says a phrase (or a nameless recording) by its key: its recording if there is one, in turn.</summary>
+        private void SayKey(string key, bool approach)
+        {
+            if (key == null) { HonkNow(); return; }
+            Recordings.Take take = TakeFor(key, true);
+            if (take != null) Say(take.Text, "take:" + take.Path, approach, true);
+            else Say(key, VoiceForText(), approach, false);
+        }
+
+        private void PrepareNext()
+        {
+            if (!cfg.Phrases || speaker == null || phrases == null) return;
+            string key = phrases.Peek(Pool());
+            if (key == null) return;
+            Recordings.Take take = TakeFor(key, false);
+            if (take != null) speaker.Prepare(take.Text, "take:" + take.Path);
+            else speaker.Prepare(key, VoiceForText());
         }
 
         public void OpenPhrases()
@@ -1283,22 +1422,22 @@ namespace GooseDeluxe
             Process.Start("notepad.exe", "\"" + phrases.Path + "\"");
         }
 
-        /// <summary>Says a phrase; <paramref name="approach"/>: first walks up to the cursor.</summary>
-        private void Say(string text, bool approach)
+        /// <summary>Says a phrase in <paramref name="voice"/>; <paramref name="approach"/>: first walks up to the cursor.</summary>
+        private void Say(string text, string voice, bool approach, bool recorded)
         {
             if (text != null) text = System.Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim(); // the bubble is one flowing text
-            if (string.IsNullOrEmpty(text)) { HonkNow(); return; }
+            if (text == null || (text.Length == 0 && !recorded)) { HonkNow(); return; }
             double now = clock.Elapsed.TotalSeconds;
             // only a goose that's just wandering stops (or walks up to the cursor) to talk; one that's busy — carrying
             // a meme, a friend's note, chasing the cursor — says it on the go and carries on
             bool stop = Deluxe.IsCurrentTask("Wander") || Deluxe.IsCurrentTask(SayTask.Id);
-            speaker.Say(text, cfg.PhraseVoice, !GooseSettings.SilenceSounds && cfg.PhraseVoice != "Off", (int)(cfg.PhraseVolume * 10), stop, now);
+            speaker.Say(text, voice, !GooseSettings.SilenceSounds && cfg.PhraseVoice != "Off", (int)(cfg.PhraseVolume * 10), stop, now);
             if (stop)
             {
                 SayTask.Approach = approach;
                 if (!Deluxe.SetTask(SayTask.Id, false)) speaker.Release(); // no such task (can't happen): say it where it stands
             }
-            if (cfg.Phrases) speaker.Prepare(phrases.Peek(), cfg.PhraseVoice); // the next one ready in advance
+            PrepareNext(); // the next one ready in advance
         }
 
         private void UpdatePhrases(bool awake)
@@ -1312,7 +1451,7 @@ namespace GooseDeluxe
             speaker.Update(now);
             if (cfg.Phrases && cfg.RandomPhrases && awake && !speaker.Busy && Deluxe.IsCurrentTask("Wander") &&
                 randomPhrase.Due(now, cfg.RandomPhraseMinutes))
-                Say(phrases.Next(), true);
+                SayKey(NextKey(), true);
         }
 
         /// <summary>Voice files of older versions, and any older than a week, are deleted at start.</summary>
@@ -1337,6 +1476,19 @@ namespace GooseDeluxe
         private Utterance BuildUtterance(string text, string voice)
         {
             string dir = Path.Combine(Path.Combine(Path.GetTempPath(), "GooseDeluxe"), Version);
+            if (voice.StartsWith("take:", StringComparison.Ordinal))
+            {
+                string rec = voice.Substring(5);
+                try { return Utterance.FromRecording(text, rec, dir, RecordingLength); }
+                catch (Exception ex)
+                {
+                    // a file Windows can't read: said the goose's way instead, and the self-check tells which one
+                    Deluxe.Log("recording " + rec + " failed: " + ex.Message);
+                    recordingError = Path.GetFileName(rec) + ": " + ex.Message;
+                    if (text.Length == 0) return Utterance.Silent(text, "запись не читается");
+                    voice = "Goose";
+                }
+            }
             string file = Path.Combine(dir, Utterance.FileNameFor(voice, text));
             if (voice == "Off") return Utterance.Silent(text, "без голоса");
             if (voice == "Atomic")
@@ -1356,6 +1508,12 @@ namespace GooseDeluxe
                 file = Path.Combine(dir, Utterance.FileNameFor("Goose", text));
             }
             return GooseVoice.Say(text, file);
+        }
+
+        private static double RecordingLength(string path)
+        {
+            try { return SpeechAudio.LengthSeconds(path); }
+            catch { return 0; }
         }
 
         // Kept apart (and never inlined): where System.Speech can't be loaded, only these fail — inside the callers' try.

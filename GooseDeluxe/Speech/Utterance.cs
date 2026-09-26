@@ -89,6 +89,40 @@ namespace GooseDeluxe
             return u;
         }
 
+        /// <summary>
+        /// A ready recording. A WAV is read — so the beak follows it — and written again as a clean copy, evenly
+        /// loud and without the silence around it (some tools write headers Windows won't play). Anything else
+        /// (MP3…) plays as it is, for <paramref name="lengthOf"/> seconds, the beak moving with the syllables.
+        /// </summary>
+        public static Utterance FromRecording(string text, string path, string copyDir, Func<string, double> lengthOf)
+        {
+            string name = "запись «" + System.IO.Path.GetFileName(path) + "»";
+            if (System.IO.Path.GetExtension(path).Equals(".wav", StringComparison.OrdinalIgnoreCase))
+            {
+                int rate;
+                float[] s = VoiceFx.Trim(WavFile.Read(path, out rate), rate);
+                if (s.Length < rate / 20) throw new InvalidDataException("в записи тишина: " + System.IO.Path.GetFileName(path));
+                DriftSynth.Normalize(s, 0.9f);
+                VoiceFx.Fade(s, rate);
+                FileInfo fi = new FileInfo(path);
+                string copy = System.IO.Path.Combine(copyDir, FileNameFor("rec", path + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks));
+                return FromSamples(text, s, rate, copy, name);
+            }
+            double seconds = lengthOf != null ? lengthOf(path) : 0;
+            Utterance u = Silent(text, name);
+            if (seconds > 0.2)
+            {
+                double k = seconds / u.Duration;
+                for (int i = 0; i < u.WordTimes.Length; i++) u.WordTimes[i] *= k;
+                float[] env = new float[(int)(seconds / EnvStep) + 1];
+                for (int i = 0; i < env.Length; i++) env[i] = u.Envelope[Math.Min(u.Envelope.Length - 1, (int)(i / k))];
+                u.Envelope = env;
+                u.Duration = seconds;
+            }
+            u.WavPath = path;
+            return u;
+        }
+
         /// <summary>No sound (muted, or no voice at all): the bubble types at a speaking pace and the beak
         /// moves with the syllables.</summary>
         public static Utterance Silent(string text, string voice)

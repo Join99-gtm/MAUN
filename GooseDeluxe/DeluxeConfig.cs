@@ -64,7 +64,7 @@ namespace GooseDeluxe
 
         // phrases (0.8)
         public bool Phrases = true;
-        public string PhraseVoice = "Atomic"; // Atomic: a Windows voice made goose-like; Goose: honks; Off: bubble only
+        public string PhraseVoice = "Records"; // Records: only phrases with a ready recording («Голос»); Atomic / Goose: recordings, the rest in a Windows voice / honks; Off: bubble only
         public bool RandomPhrases = true;
         public float RandomPhraseMinutes = 5f;
         public float PhraseVolume = 85f;
@@ -74,7 +74,7 @@ namespace GooseDeluxe
         public bool FriendCanStealMouse = true;
         public string NtfyServer = "https://ntfy.sh";
 
-        public static readonly string[] PhraseVoices = { "Atomic", "Goose", "Off" };
+        public static readonly string[] PhraseVoices = { "Records", "Atomic", "Goose", "Off" };
 
         private static readonly string[] Keys =
         {
@@ -229,7 +229,7 @@ namespace GooseDeluxe
             add("RandomChase", B(RandomChase), "Иногда гусь сам ни с того ни с сего гоняется за курсором");
             add("RandomChaseMinutes", RandomChaseMinutes.ToString(CultureInfo.InvariantCulture), "Примерно раз во столько минут (1 - 120)");
             add("Phrases", B(Phrases), "Гусь говорит фразы из файла Фразы.txt рядом с модом (клик по гусю, «Сказать фразу» в меню)");
-            add("PhraseVoice", PhraseVoice, "Голос фраз: Atomic — русский голос Windows, пониже и с хрипотцой; Goose — гусиное «га-га» по слогам; Off — только облачко");
+            add("PhraseVoice", PhraseVoice, "Голос фраз: Records — только фразы с готовой записью из папки Голос; Atomic — записи, остальное голосом Windows; Goose — записи, остальное «га-га»; Off — только облачко");
             add("RandomPhrases", B(RandomPhrases), "Гусь сам иногда подходит к курсору и говорит фразу");
             add("RandomPhraseMinutes", RandomPhraseMinutes.ToString(CultureInfo.InvariantCulture), "Примерно раз во столько минут (1 - 120)");
             add("PhraseVolume", PhraseVolume.ToString(CultureInfo.InvariantCulture), "Громкость фраз, 0 - 100");

@@ -34,6 +34,7 @@ namespace GooseDeluxe
             Add(menu.Items, "Погнаться за курсором", null, (s, e) => c.ChaseCursor());
             Add(menu.Items, "Убрать листья", null, (s, e) => c.SweepLeaves());
             Add(menu.Items, "Фразы гуся (дописать свои)…", null, (s, e) => c.OpenPhrases());
+            Add(menu.Items, "Папка голоса (свои записи)…", null, (s, e) => c.OpenVoiceFolder());
             menu.Items.Add(new ToolStripSeparator());
 
             friendsMenu = new ToolStripMenuItem("Гусь к другу");

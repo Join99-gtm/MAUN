@@ -253,6 +253,24 @@ function Install-Into([string]$gooseDir, [string]$dll, [string]$ini) {
             [IO.File]::WriteAllText($userIni, [regex]::Replace($iniText, '(?m)^EscHoldSeconds=1\.5(\s*)$', 'EscHoldSeconds=3$1'), (New-Object System.Text.UTF8Encoding($true)))
         }
     } catch { }
+    # 0.8 wrote PhraseVoice=Atomic (the Windows voice); the user wants the ready recordings instead
+    try {
+        $iniText = [IO.File]::ReadAllText($userIni)
+        if ($iniText -match '(?m)^PhraseVoice=Atomic\s*$') {
+            [IO.File]::WriteAllText($userIni, [regex]::Replace($iniText, '(?m)^PhraseVoice=Atomic(\s*)$', 'PhraseVoice=Records$1'), (New-Object System.Text.UTF8Encoding($true)))
+        }
+    } catch { }
+    # ready voice lines travel in the zip's «Голос»: added next to the mod, the user's own files are kept
+    $voiceFrom = Join-Path (Split-Path -Parent $dll) 'Голос'
+    if ((Test-Path -LiteralPath $voiceFrom) -and -not (Same-Dir $voiceFrom (Join-Path $modDir 'Голос'))) {
+        $voiceTo = Join-Path $modDir 'Голос'
+        New-Item -ItemType Directory -Path $voiceTo -Force | Out-Null
+        foreach ($f in Get-ChildItem -LiteralPath $voiceFrom -File) {
+            $to = Join-Path $voiceTo $f.Name
+            if (-not (Test-Path -LiteralPath $to)) { Copy-Item -LiteralPath $f.FullName -Destination $to -Force }
+            try { Unblock-File -LiteralPath $to -ErrorAction Stop } catch { }
+        }
+    }
     # a downloaded zip marks its files as "from the internet"; the goose loads mods anyway, but clear it
     try { Unblock-File -LiteralPath $target -ErrorAction Stop } catch { }
     # the goose loads every DLL in a mod folder; a stray copy of the API there breaks the mod

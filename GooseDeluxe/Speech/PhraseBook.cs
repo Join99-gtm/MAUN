@@ -43,6 +43,14 @@ namespace GooseDeluxe
         /// <summary>The phrase <see cref="Next"/> will give, to get its sound ready in advance.</summary>
         public string Peek() { Refresh(); return deck.Peek(phrases); }
 
+        /// <summary>The phrases in the file, as read last.</summary>
+        public IList<string> All { get { Refresh(); return phrases; } }
+
+        /// <summary>The next of some other set (the recorded phrases, say) — still round and round, no repeats.</summary>
+        public string Next(IList<string> pool) { return deck.Next(pool); }
+
+        public string Peek(IList<string> pool) { return deck.Peek(pool); }
+
         private void Refresh()
         {
             try

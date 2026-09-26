@@ -45,5 +45,25 @@ namespace GooseDeluxe
         }
 
         public void Dispose() { Stop(); }
+
+        private static readonly object lengthGate = new object();
+
+        /// <summary>How long a sound file plays, in seconds (0 if MCI can't tell) — for MP3s we can't read.</summary>
+        public static double LengthSeconds(string path)
+        {
+            lock (lengthGate)
+            {
+                if (mciSendString("open \"" + path + "\" type mpegvideo alias gdlength", null, 0, IntPtr.Zero) != 0 &&
+                    mciSendString("open \"" + path + "\" alias gdlength", null, 0, IntPtr.Zero) != 0) return 0;
+                try
+                {
+                    mciSendString("set gdlength time format milliseconds", null, 0, IntPtr.Zero);
+                    StringBuilder sb = new StringBuilder(32);
+                    int ms;
+                    return mciSendString("status gdlength length", sb, sb.Capacity, IntPtr.Zero) == 0 && int.TryParse(sb.ToString(), out ms) ? ms / 1000.0 : 0;
+                }
+                finally { mciSendString("close gdlength", null, 0, IntPtr.Zero); }
+            }
+        }
     }
 }

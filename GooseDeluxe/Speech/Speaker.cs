@@ -64,7 +64,7 @@ namespace GooseDeluxe
         /// the goose has arrived: <see cref="Release"/>).</summary>
         public void Say(string text, string voice, bool sound, int volume, bool hold, double now)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (text == null) return; // "" is a recording without a phrase: played, no bubble
             Stop();
             wantText = text;
             wantVoice = voice;
@@ -80,7 +80,7 @@ namespace GooseDeluxe
         /// <summary>Makes a phrase's sound in the background, so it's ready when it's needed.</summary>
         public void Prepare(string text, string voice)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (text == null) return;
             string key = voice + "|" + text;
             lock (gate)
             {
@@ -176,7 +176,7 @@ namespace GooseDeluxe
 
         public void Draw(Graphics g, Vector2 head, Vector2 feet, Vector2 screen, double now)
         {
-            if (current == null || bubble == null) return;
+            if (current == null || bubble == null || current.Text.Length == 0) return;
             double t = now - startedAt, end = current.Duration + Linger(current);
             float alpha = (float)Math.Min(Math.Min(1.0, t / FadeIn), Math.Max(0.0, 1.0 - (t - end) / FadeOut));
             bubble.Draw(g, head, feet, screen, current.RevealAt(t), alpha);

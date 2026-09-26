@@ -63,6 +63,7 @@ namespace UiPreview
         public void ChaseCursor() { Calls.Add("ChaseCursor"); }
         public void SayPhrase() { Calls.Add("SayPhrase"); }
         public void OpenPhrases() { Calls.Add("OpenPhrases"); }
+        public void OpenVoiceFolder() { Calls.Add("OpenVoiceFolder"); }
     }
 
     internal static class Program

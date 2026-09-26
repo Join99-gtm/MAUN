@@ -77,6 +77,8 @@ namespace GooseDeluxe
         void SayPhrase();
         /// <summary>Opens Фразы.txt in Notepad: the user adds their own phrases.</summary>
         void OpenPhrases();
+        /// <summary>Opens the «Голос» folder: ready recordings of the phrases.</summary>
+        void OpenVoiceFolder();
 
         // the goose's own settings (config.ini)
         bool GooseSettingsAvailable { get; }

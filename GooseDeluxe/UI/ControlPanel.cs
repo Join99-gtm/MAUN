@@ -118,6 +118,7 @@ namespace GooseDeluxe
             TableLayoutPanel main = Grid(2);
             main.Controls.Add(Btn("Сказать фразу", c.SayPhrase));
             main.Controls.Add(Btn("Фразы (дописать свои)", c.OpenPhrases));
+            main.Controls.Add(Btn("Папка голоса (свои записи)", c.OpenVoiceFolder));
             main.Controls.Add(Btn("Позвать гуся  (Ctrl+Alt+G)", c.Come));
             main.Controls.Add(Btn("Гудок  (Ctrl+Alt+H)", c.HonkNow));
             main.Controls.Add(Btn("Принести мем", () => c.RunGooseTask("CollectMeme")));
@@ -276,7 +277,7 @@ namespace GooseDeluxe
 
             // --- language & seasons
             TableLayoutPanel lang = Grid(1);
-            lang.Controls.Add(Choice("Голос фраз", new[] { "Как в Atomic Heart (голос Windows)", "По-гусиному (га-га)", "Без голоса (только облачко)" },
+            lang.Controls.Add(Choice("Голос фраз", new[] { "Только готовые записи (папка «Голос»)", "Записи + голос Windows для остальных", "Записи + «га-га» для остальных", "Без голоса (только облачко)" },
                 () => Math.Max(0, Array.IndexOf(DeluxeConfig.PhraseVoices, cfg.PhraseVoice)),
                 i => { cfg.PhraseVoice = DeluxeConfig.PhraseVoices[i]; c.ApplyConfig("PhraseVoice"); }));
             lang.Controls.Add(Choice("Гудок", new[] { "«ГА-ГА-ГА!» (по-русски)", "«HONK!» (как в оригинале)" },
