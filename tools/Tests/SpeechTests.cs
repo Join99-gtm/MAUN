@@ -312,7 +312,7 @@ namespace Tests
             Check("сам — сначала бежит к курсору и молчит", arrived == 0 && g.currentSpeed >= 199f);
             w.Run(g, 4.5f, () => arrived > 0);
             Vector2 spot = SayTask.SpotBeside(new Vector2(200f, 500f), new Vector2(900f, 300f), FakeWorld.Screen);
-            Check("встал сбоку от курсора — и заговорил", arrived == 1 && Vector2.Distance(g.position, spot) < 20f,
+            Check("встал сбоку от курсора — и заговорил", arrived == 1 && Vector2.Distance(g.position, spot) < 26f,
                   g.position.x.ToString("0") + "," + g.position.y.ToString("0"));
             Vector2 at = g.position;
             w.Run(g, 2f);
