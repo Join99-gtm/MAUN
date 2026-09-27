@@ -68,6 +68,7 @@ namespace GooseDeluxe
         public bool RandomPhrases = true;
         public float RandomPhraseMinutes = 5f;
         public float PhraseVolume = 85f;
+        public bool Memes = true;
 
         // friends (0.2)
         public bool Friends = true;
@@ -86,7 +87,7 @@ namespace GooseDeluxe
             "ClickLeafPiles", "NoRepeats", "RussianMemes", "EscHoldSeconds", "LeafPiles",
             "DriftSmoke", "DriftSound", "DriftMusic", "DriftMusicFrom", "DriftMusicTo",
             "RandomChase", "RandomChaseMinutes",
-            "Phrases", "PhraseVoice", "RandomPhrases", "RandomPhraseMinutes", "PhraseVolume",
+            "Phrases", "PhraseVoice", "RandomPhrases", "RandomPhraseMinutes", "PhraseVolume", "Memes",
         };
 
         public static DeluxeConfig Load(string path)
@@ -155,6 +156,7 @@ namespace GooseDeluxe
             c.RandomPhrases = GetBool(kv, "RandomPhrases", c.RandomPhrases);
             c.RandomPhraseMinutes = Clamp(GetFloat(kv, "RandomPhraseMinutes", c.RandomPhraseMinutes), 1f, 120f);
             c.PhraseVolume = Clamp(GetFloat(kv, "PhraseVolume", c.PhraseVolume), 0f, 100f);
+            c.Memes = GetBool(kv, "Memes", c.Memes);
             c.Friends = GetBool(kv, "Friends", c.Friends);
             c.FriendCanStealMouse = GetBool(kv, "FriendCanStealMouse", c.FriendCanStealMouse);
             if (kv.TryGetValue("NtfyServer", out v))
@@ -233,6 +235,7 @@ namespace GooseDeluxe
             add("RandomPhrases", B(RandomPhrases), "Гусь сам иногда подходит к курсору и говорит фразу");
             add("RandomPhraseMinutes", RandomPhraseMinutes.ToString(CultureInfo.InvariantCulture), "Примерно раз во столько минут (1 - 120)");
             add("PhraseVolume", PhraseVolume.ToString(CultureInfo.InvariantCulture), "Громкость фраз, 0 - 100");
+            add("Memes", B(Memes), "Гусь сам приносит мемы (False — только по кнопке «Принести мем»)");
             add("LeafPiles", B(LeafPiles), "Кучи листьев осеннего мода (False — их не будет совсем)");
             add("RussianMemes", B(RussianMemes), "Надписи на мемах гуся по-русски (оригиналы лежат в Assets\\Images\\Memes\\en)");
             return sb.ToString();

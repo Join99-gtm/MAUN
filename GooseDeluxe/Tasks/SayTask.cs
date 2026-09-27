@@ -51,7 +51,11 @@ namespace GooseDeluxe
             {
                 Vector2 spot = SpotBeside(g.position, new Vector2(Input.mouseX, Input.mouseY), Deluxe.ScreenSize());
                 g.targetPos = spot;
-                if (Vector2.Distance(g.position, spot) > 14f && now - d.start < ApproachSeconds) return;
+                float left = Vector2.Distance(g.position, spot);
+                // slow down for the last bit: the goose has no brakes (its StopRadius is negative), at a run it would
+                // shoot past the spot and come back to it backwards
+                if (left < 70f) Deluxe.SetSpeed(g, GooseEntity.SpeedTiers.Walk);
+                if (left > 24f && now - d.start < ApproachSeconds) return;
                 d.approaching = false;
                 Deluxe.SetSpeed(g, GooseEntity.SpeedTiers.Walk);
             }
@@ -60,7 +64,10 @@ namespace GooseDeluxe
                 d.talkSince = now;
                 Arrived();
             }
-            g.targetPos = g.position; // stand still and talk
+            // stand still and talk. The velocity too: left alone, the goose would coast on — and since it turns
+            // to face its target (here: the spot it just left), it would coast backwards
+            g.targetPos = g.position;
+            g.velocity = Vector2.zero;
             if ((!StillTalking() && now - d.talkSince > 0.5f) || now - d.start > MaxSeconds) Deluxe.Done(g);
         }
 

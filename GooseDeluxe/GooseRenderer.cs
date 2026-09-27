@@ -265,13 +265,19 @@ namespace GooseDeluxe
                 Line(g, orange, 9f * s, tipBase, tipBase + p.fwdHead * 3f * s);
                 return;
             }
-            float ang = open * 22f;
-            Vector2 upperDir = M.Rotate(p.fwdHead, p.fwdHead.x >= 0f ? -ang : ang);
-            Vector2 lowerDir = M.Rotate(p.fwdHead, p.fwdHead.x >= 0f ? ang : -ang);
+            // The halves part across the beak, the upper one towards the top of the screen. (They used to part
+            // straight up and down the screen: fine for a goose seen side-on, but with the head turned towards or
+            // away from the viewer the halves slid along the beak instead, and the opening flipped over as the head
+            // passed through vertical.)
+            Vector2 across = new Vector2(-p.fwdHead.y, p.fwdHead.x);
+            if (across.y > 0f || (across.y == 0f && across.x < 0f)) across = across * -1f;
+            float rad = open * 22f * (float)Math.PI / 180f, c = (float)Math.Cos(rad), sn = (float)Math.Sin(rad);
+            Vector2 upperDir = p.fwdHead * c + across * sn;
+            Vector2 lowerDir = p.fwdHead * c - across * sn;
             // dark mouth interior between the halves
             Line(g, Color.FromArgb(120, 40, 20), 5f * s, tipBase, tipBase + p.fwdHead * 3f * s);
-            Line(g, orange, 4.6f * s, tipBase + M.Up * 2.2f * s, tipBase + M.Up * 2.2f * s + upperDir * 4f * s);
-            Line(g, orange, 4.2f * s, tipBase - M.Up * 2.2f * s, tipBase - M.Up * 2.2f * s + lowerDir * 3.5f * s);
+            Line(g, orange, 4.6f * s, tipBase + across * 2.2f * s, tipBase + across * 2.2f * s + upperDir * 4f * s);
+            Line(g, orange, 4.2f * s, tipBase - across * 2.2f * s, tipBase - across * 2.2f * s + lowerDir * 3.5f * s);
         }
 
         private void DrawEyes(Graphics g, GoosePose p)

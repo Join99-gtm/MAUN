@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -57,6 +58,29 @@ namespace Tests
                 }
                 Console.WriteLine(rec.Files + " файлов, " + rec.Keys().Count + " фраз, проблем: " + bad);
                 return bad == 0 ? 0 : 1;
+            }
+            if (args.Length == 2 && args[0] == "--beak-sheet") // the goose in 8 directions with its beak open
+            {
+                using (Bitmap bmp = new Bitmap(8 * 150, 190, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+                using (Graphics gr = Graphics.FromImage(bmp))
+                {
+                    gr.Clear(Color.FromArgb(255, 90, 110, 140));
+                    DeluxeConfig dc = new DeluxeConfig { Scale = 2.2f };
+                    for (int k = 0; k < 8; k++)
+                    {
+                        FakeWorld fw = new FakeWorld();
+                        GooseEntity ge = fw.NewGoose(new Vector2(75 + k * 150, 150));
+                        ge.direction = k * 45f;
+                        GooseAnimator an = new GooseAnimator(dc, new ParticleSystem());
+                        GoosePose pose = an.Update(ge, 0.016f, 1f);
+                        pose.beakOpen = 1f;
+                        GooseRenderer rr = new GooseRenderer(dc);
+                        rr.Prepare(gr);
+                        rr.Draw(gr, pose, ge, 1f, HatStyle.None, null, false);
+                    }
+                    bmp.Save(args[1]);
+                }
+                return 0;
             }
             if (args.Length == 3 && args[0] == "--honk-voice")
             {

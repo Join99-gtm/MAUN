@@ -339,6 +339,7 @@ namespace GooseDeluxe
                 // a meme / Not-epad the goose has just made (it shows it later): next one from the no-repeat deck
                 try { forms.Update(goose.currentTaskData, cfg, Deluxe.GooseDir); }
                 catch (Exception ex) { Deluxe.Log("meme/note swap failed: " + ex.Message); }
+                SkipUnwantedMeme(goose);
             }
             if (!hooked || failed || guests == null) return;
             try { guests.Update(timestep != null ? timestep.LastSteps : 1); }
@@ -780,7 +781,7 @@ namespace GooseDeluxe
         {
             switch (cmd)
             {
-                case GooseCommand.Meme: Deluxe.SetTask("CollectMeme", false); break;
+                case GooseCommand.Meme: memeAsked = true; Deluxe.SetTask("CollectMeme", false); break;
                 case GooseCommand.Note: Deluxe.SetTask("CollectNotepad", false); break;
                 case GooseCommand.Mud: Deluxe.SetTask("TrackMud", false); break;
                 case GooseCommand.Come: Deluxe.SetTask(ComeTask.Id, false); break;
@@ -821,7 +822,33 @@ namespace GooseDeluxe
 
         public void HonkNow() { Wake(); Deluxe.Honk(); }
 
-        public void RunGooseTask(string id) { Wake(); Deluxe.SetTask(id, id == "NabMouse"); }
+        public void RunGooseTask(string id)
+        {
+            Wake();
+            if (id == "CollectMeme") memeAsked = true;
+            Deluxe.SetTask(id, id == "NabMouse");
+        }
+
+        private int lastTaskIndex = -1;
+        private bool memeAsked;
+
+        /// <summary>
+        /// «Гусь сам приносит мемы» unticked: a meme trip the goose picked itself is called off as it starts — before
+        /// it fetches the window (it only shows it on the way back). One asked for («Принести мем», «мем» from a
+        /// phone or a friend) still happens.
+        /// </summary>
+        private void SkipUnwantedMeme(GooseEntity goose)
+        {
+            if (goose.currentTask == lastTaskIndex) return;
+            lastTaskIndex = goose.currentTask;
+            if (goose.currentTask != Deluxe.TaskIndex("CollectMeme")) return;
+            bool asked = memeAsked;
+            memeAsked = false;
+            if (cfg.Memes || asked) return;
+            Deluxe.ToWander();
+            lastTaskIndex = goose.currentTask;
+            Deluxe.Log("meme skipped: the goose doesn't bring memes by itself (setting)");
+        }
 
         public void TogglePause()
         {
