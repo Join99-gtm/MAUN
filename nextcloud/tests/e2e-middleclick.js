@@ -1,5 +1,5 @@
 // End-to-end check of the files_middleclick app on a local Nextcloud 33.
-// Usage: node test.js [with|without]   (whether the app is expected to be enabled)
+// Usage: node e2e-middleclick.js [with|without]   (whether the app is expected to be enabled)
 const { chromium } = require('playwright')
 
 const BASE = 'http://127.0.0.1:8081/index.php'

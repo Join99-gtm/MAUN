@@ -23,7 +23,8 @@ Nextcloud как обычно. Левая и правая кнопки, пере
 ## Установка (делает админ)
 
 ```bash
-# 1. Распаковать в каталог apps Nextcloud (например /var/www/nextcloud/apps)
+# 1. Распаковать архив из nextcloud/release/ в каталог apps Nextcloud
+#    (например /var/www/nextcloud/apps)
 tar -xzf files_middleclick-1.0.0.tar.gz -C /var/www/nextcloud/apps/
 
 # 2. Выставить владельца, как у остальных приложений (www-data на Debian/Ubuntu)
@@ -62,4 +63,4 @@ Playwright, с включённым и выключенным приложени
 клик колёсиком, Ctrl+клик, левый клик по файлу и папке, правый клик
 (контекстное меню), перетаскивание файла в папку, выделение чекбоксом,
 страница общей ссылки, отсутствие ошибок JS и записей в `nextcloud.log`.
-Все 17 проверок прошли.
+Все 17 проверок прошли. Сам тест лежит в `nextcloud/tests/e2e-middleclick.js`.
